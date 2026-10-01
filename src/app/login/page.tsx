@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
@@ -12,6 +12,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('reset') === 'success') {
+        setSuccessMsg('Your password was updated successfully. Please sign in with your new password.');
+      }
+    }
+  }, []);
 
   const supabase = createClient();
 
@@ -95,6 +105,14 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {/* Success Alert */}
+        {successMsg && (
+          <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-mono flex items-start gap-2.5 animate-in fade-in">
+            <span className="material-symbols-outlined text-[18px] text-emerald-400 shrink-0">check_circle</span>
+            <span className="leading-tight">{successMsg}</span>
+          </div>
+        )}
+
         {/* Error Alert */}
         {errorMsg && (
           <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-mono flex items-start gap-2.5 animate-in fade-in">
@@ -129,6 +147,12 @@ export default function LoginPage() {
               <label className="text-[11px] font-mono text-[#cac5ce] uppercase tracking-wider block">
                 Password
               </label>
+              <Link
+                href="/forgot-password"
+                className="text-[11px] font-mono text-[#fbcfe8] hover:underline transition-colors"
+              >
+                Forgot password?
+              </Link>
             </div>
             <div className="relative">
               <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[#938f98] text-[18px]">

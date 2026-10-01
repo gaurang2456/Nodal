@@ -35,7 +35,12 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isAuthRoute = pathname.startsWith('/login') || pathname.startsWith('/signup') || pathname.startsWith('/auth');
+  const isAuthRoute =
+    pathname.startsWith('/login') ||
+    pathname.startsWith('/signup') ||
+    pathname.startsWith('/forgot-password') ||
+    pathname.startsWith('/reset-password') ||
+    pathname.startsWith('/auth');
   const isPublicAsset = pathname.startsWith('/_next') || pathname.startsWith('/api') || pathname.includes('.');
 
   // If Supabase OAuth returns code to root or another route instead of /auth/callback,
@@ -53,8 +58,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // If authenticated and accessing login/signup -> redirect to /
-  if (user && (pathname === '/login' || pathname === '/signup')) {
+  // If authenticated and accessing login/signup/forgot-password -> redirect to /
+  // Note: /reset-password is intentionally permitted for authenticated recovery sessions
+  if (user && (pathname === '/login' || pathname === '/signup' || pathname === '/forgot-password')) {
     const url = request.nextUrl.clone();
     url.pathname = '/';
     return NextResponse.redirect(url);
