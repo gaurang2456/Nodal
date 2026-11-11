@@ -1,10 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   useRepositories,
+  useRepository,
+  markRepositoryOpened,
+  REPOSITORY_KEYS,
   invalidateRepositories,
   invalidateRepository,
   invalidateGraph,
@@ -16,10 +20,7 @@ import { Repository, TabType, ArchitectureFlowNode } from '@/types';
 import { Navbar } from '@/components/layout/Navbar';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { RightPanel } from '@/components/layout/RightPanel';
-
-import { HeroSection } from '@/components/landing/HeroSection';
-import { FeatureCards } from '@/components/landing/FeatureCards';
-import { EmptyState } from '@/components/landing/EmptyState';
+import { Dashboard } from '@/components/dashboard/Dashboard';
 
 import { UploadModal } from '@/components/upload/UploadModal';
 import { IndexingProgressModal } from '@/components/indexing/IndexingProgressModal';
@@ -29,27 +30,80 @@ import { DependencyGraphView, GraphPersistedUiState } from '@/components/graph/D
 import { FileExplorerView, FilesPersistedUiState } from '@/components/files/FileExplorerView';
 import { AnalysisView, AnalysisPersistedUiState } from '@/components/analysis/AnalysisView';
 
-export default function Home() {
+const VALID_TABS = new Set<TabType>(['summary', 'graph', 'files', 'analysis', 'settings']);
+
+function parseTabParam(rawTab: string | null): TabType {
+  if (rawTab && VALID_TABS.has(rawTab as TabType)) {
+    return rawTab as TabType;
+  }
+  return 'summary';
+}
+
+function buildRepoUrl(repoId: string, tab: TabType = 'summary'): string {
+  return `/?repo=${encodeURIComponent(repoId)}&tab=${encodeURIComponent(tab)}`;
+}
+
+function WorkspaceShellFallback() {
+  return (
+    <div className="bg-[#121316] text-[#e3e2e6] min-h-screen flex flex-col font-sans">
+      <div className="h-14 border-b border-[#48454d]/20 bg-[#121316]/90 px-6 flex items-center">
+        <div className="h-5 w-28 rounded bg-[#1f1f23] animate-pulse" />
+      </div>
+      <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-10 space-y-6">
+        <div className="h-8 w-52 rounded-lg bg-[#1f1f23] animate-pulse" />
+        <div className="h-44 rounded-2xl bg-[#1a1b1e] border border-[#48454d]/20 animate-pulse" />
+      </div>
+    </div>
+  );
+}
+
+function CodeGraphWorkspace() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+
+  const rawRepoParam = searchParams.get('repo');
+  const urlRepoId = rawRepoParam && rawRepoParam.trim().length > 0 ? rawRepoParam.trim() : null;
+  const activeTab = parseTabParam(searchParams.get('tab'));
+
   const { data: repositories = [], isLoading: loadingRepos, error: repoError } = useRepositories();
-  const [activeRepoId, setActiveRepoId] = useState<string | null>(null);
+  const {
+    data: fetchedRepo,
+    isLoading: loadingRepoDetail,
+    error: repoDetailError,
+    refetch: refetchRepoDetail,
+  } = useRepository(urlRepoId);
 
-  const activeRepo =
-    (activeRepoId ? repositories.find((r) => r.id === activeRepoId) : null) ||
-    (repositories.length > 0 ? (repositories.find((r) => r.status === 'COMPLETED') || repositories[0]) : null);
+  const isRepoNotFound = Boolean(
+    urlRepoId && (repoDetailError as Error | null)?.message === 'NOT_FOUND'
+  );
+  const isRepoFetchError = Boolean(
+    urlRepoId &&
+      repoDetailError &&
+      (repoDetailError as Error).message !== 'NOT_FOUND' &&
+      (repoDetailError as Error).message !== 'UNAUTHORIZED'
+  );
 
-  const setActiveRepo = (repo: Repository | null) => {
-    setActiveRepoId(repo?.id || null);
-  };
+  const listMatchedRepo = useMemo(
+    () => (urlRepoId ? repositories.find((r) => r.id === urlRepoId) || null : null),
+    [urlRepoId, repositories]
+  );
 
-  const [activeTab, setActiveTab] = useState<TabType>('summary');
-  const [showLanding, setShowLanding] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
+  const activeRepo: Repository | null = useMemo(() => {
+    if (!urlRepoId || isRepoNotFound) return null;
+    return fetchedRepo || listMatchedRepo;
+  }, [urlRepoId, isRepoNotFound, fetchedRepo, listMatchedRepo]);
+
   const [isRightPanelOpen, setIsRightPanelOpen] = useState(true);
-  const [selectedFile, setSelectedFile] = useState<string>('');
-  const [targetLineRange, setTargetLineRange] = useState<{ startLine?: number; endLine?: number }>({});
-  const [activeLayerFilter, setActiveLayerFilter] = useState<{ label: string; count: number; files: string[] } | null>(null);
+  const [fileSelectionState, setFileSelectionState] = useState<{
+    repoId: string | null;
+    selectedFile: string;
+    targetLineRange: { startLine?: number; endLine?: number };
+  }>({ repoId: null, selectedFile: '', targetLineRange: {} });
+  const [layerFilterState, setLayerFilterState] = useState<{
+    repoId: string | null;
+    value: { label: string; count: number; files: string[] } | null;
+  }>({ repoId: null, value: null });
   const [graphUiStateByRepo, setGraphUiStateByRepo] = useState<Record<string, GraphPersistedUiState>>({});
   const [filesUiStateByRepo, setFilesUiStateByRepo] = useState<Record<string, FilesPersistedUiState>>({});
   const [analysisUiStateByRepo, setAnalysisUiStateByRepo] = useState<Record<string, AnalysisPersistedUiState>>({});
@@ -69,59 +123,109 @@ export default function Home() {
 
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
-  // Global app history stack for back navigation across tabs and views
-  const [navHistory, setNavHistory] = useState<
-    {
+  // Track last repo ID marked opened to avoid duplicate /open calls across tab switches
+  const lastOpenedRepoRef = useRef<string | null>(null);
+
+  // Global app history stack for back navigation across tabs and file views within a repo
+  const [navHistoryState, setNavHistoryState] = useState<{
+    repoId: string | null;
+    items: {
       tab: TabType;
       selectedFile: string;
       targetLineRange: { startLine?: number; endLine?: number };
       activeLayerFilter: { label: string; count: number; files: string[] } | null;
-      showLanding: boolean;
-    }[]
-  >([]);
+    }[];
+  }>({ repoId: null, items: [] });
+
+  const selectedFile = fileSelectionState.repoId === urlRepoId ? fileSelectionState.selectedFile : '';
+  const targetLineRange =
+    fileSelectionState.repoId === urlRepoId ? fileSelectionState.targetLineRange : {};
+  const activeLayerFilter = layerFilterState.repoId === urlRepoId ? layerFilterState.value : null;
+  const navHistory = navHistoryState.repoId === urlRepoId ? navHistoryState.items : [];
 
   const pushNavHistory = () => {
-    setNavHistory((prev) => [
-      ...prev.slice(-29),
-      {
-        tab: activeTab,
-        selectedFile,
-        targetLineRange,
-        activeLayerFilter,
-        showLanding,
-      },
-    ]);
-  };
-
-  const handleGoBack = () => {
-    setNavHistory((prev) => {
-      if (prev.length === 0) return prev;
-      const nextHistory = [...prev];
-      const previousSnapshot = nextHistory.pop()!;
-      setActiveTab(previousSnapshot.tab);
-      setSelectedFile(previousSnapshot.selectedFile);
-      setTargetLineRange(previousSnapshot.targetLineRange);
-      setActiveLayerFilter(previousSnapshot.activeLayerFilter);
-      setShowLanding(previousSnapshot.showLanding);
-      return nextHistory;
+    setNavHistoryState((prev) => {
+      const currentItems = prev.repoId === urlRepoId ? prev.items : [];
+      return {
+        repoId: urlRepoId,
+        items: [
+          ...currentItems.slice(-29),
+          {
+            tab: activeTab,
+            selectedFile,
+            targetLineRange,
+            activeLayerFilter,
+          },
+        ],
+      };
     });
   };
 
-  const handleTabChange = (newTab: TabType) => {
-    if (newTab !== activeTab) {
-      pushNavHistory();
-      if (newTab !== 'files') {
-        setActiveLayerFilter(null);
-      }
-      setActiveTab(newTab);
+  const handleGoBack = () => {
+    if (!urlRepoId || navHistory.length === 0) return;
+    const nextHistory = [...navHistory];
+    const previousSnapshot = nextHistory.pop()!;
+    setNavHistoryState({ repoId: urlRepoId, items: nextHistory });
+    setFileSelectionState({
+      repoId: urlRepoId,
+      selectedFile: previousSnapshot.selectedFile,
+      targetLineRange: previousSnapshot.targetLineRange,
+    });
+    setLayerFilterState({ repoId: urlRepoId, value: previousSnapshot.activeLayerFilter });
+    if (previousSnapshot.tab !== activeTab) {
+      router.replace(buildRepoUrl(urlRepoId, previousSnapshot.tab));
     }
   };
 
+  const handleTabChange = (newTab: TabType) => {
+    if (!urlRepoId) return;
+    if (newTab !== activeTab) {
+      pushNavHistory();
+      if (newTab !== 'files') {
+        setLayerFilterState({ repoId: urlRepoId, value: null });
+      }
+      router.replace(buildRepoUrl(urlRepoId, newTab));
+    }
+  };
+
+  // Redirect to login if authentication is missing or expired
   useEffect(() => {
-    if (repoError && (repoError as Error).message === 'UNAUTHORIZED') {
+    const isUnauthList = (repoError as Error | null)?.message === 'UNAUTHORIZED';
+    const isUnauthDetail = (repoDetailError as Error | null)?.message === 'UNAUTHORIZED';
+    if (isUnauthList || isUnauthDetail) {
       router.push('/login');
     }
-  }, [repoError, router]);
+  }, [repoError, repoDetailError, router]);
+
+  // Persist last_opened_at once per repository navigation (including direct URL load)
+  useEffect(() => {
+    if (!urlRepoId) {
+      lastOpenedRepoRef.current = null;
+      return;
+    }
+
+    if (isRepoNotFound || fetchedRepo?.id !== urlRepoId) {
+      return;
+    }
+
+    if (lastOpenedRepoRef.current === urlRepoId) {
+      return;
+    }
+
+    lastOpenedRepoRef.current = urlRepoId;
+
+    markRepositoryOpened(urlRepoId)
+      .then(() => {
+        invalidateRepositories(queryClient);
+      })
+      .catch((err) => {
+        if (err?.message === 'UNAUTHORIZED') {
+          router.push('/login');
+        } else {
+          console.error('Failed to persist repository last_opened_at:', err);
+        }
+      });
+  }, [urlRepoId, fetchedRepo?.id, isRepoNotFound, queryClient, router]);
 
   // Poll backend for indexing progress
   useEffect(() => {
@@ -129,7 +233,7 @@ export default function Home() {
 
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/repositories/${indexingRepoId}`);
+        const res = await fetch(`/api/repositories/${encodeURIComponent(indexingRepoId)}`);
         if (res.ok) {
           const data = await res.json();
           const repo = data.repository;
@@ -186,9 +290,11 @@ export default function Home() {
       const data = await res.json();
       setIndexingRepoId(data.id);
       invalidateRepositories(queryClient);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIndexingStatus('FAILED');
-      setIndexingError(err?.message || 'Failed to upload repository ZIP.');
+      setIndexingError(
+        err instanceof Error ? err.message : 'Failed to upload repository ZIP.'
+      );
     }
   };
 
@@ -216,36 +322,33 @@ export default function Home() {
       const data = await res.json();
       setIndexingRepoId(data.id);
       invalidateRepositories(queryClient);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setIndexingStatus('FAILED');
-      setIndexingError(err?.message || 'Failed to import GitHub repository.');
+      setIndexingError(
+        err instanceof Error ? err.message : 'Failed to import GitHub repository.'
+      );
     }
   };
 
   const handleFinishIndexing = () => {
-    if (indexingRepoId) {
-      setActiveRepoId(indexingRepoId);
-    }
+    const newRepoId = indexingRepoId;
     setIsIndexingModalOpen(false);
-    setShowLanding(false);
-    setActiveTab('summary');
+    if (newRepoId) {
+      router.push(buildRepoUrl(newRepoId, 'summary'));
+    }
   };
 
   const handleDeleteRepo = async (repoId: string) => {
     try {
-      const res = await fetch(`/api/repositories/${repoId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/repositories/${encodeURIComponent(repoId)}`, { method: 'DELETE' });
       if (!res.ok) {
         throw new Error('Failed to delete repository');
       }
       await invalidateRepositories(queryClient);
-      const remaining = repositories.filter((r) => r.id !== repoId);
-      if (activeRepoId === repoId) {
-        if (remaining.length > 0) {
-          setActiveRepoId(remaining[0].id);
-        } else {
-          setActiveRepoId(null);
-          setShowLanding(true);
-        }
+      queryClient.removeQueries({ queryKey: REPOSITORY_KEYS.detail(repoId) });
+      if (urlRepoId === repoId) {
+        lastOpenedRepoRef.current = null;
+        router.replace('/');
       }
     } catch (err) {
       console.error('Delete repository error:', err);
@@ -254,50 +357,60 @@ export default function Home() {
   };
 
   const handleSelectFileFromAnywhere = (filename: string, startLine?: number, endLine?: number) => {
+    if (!urlRepoId) return;
     pushNavHistory();
-    setSelectedFile(filename);
-    if (startLine && endLine) {
-      setTargetLineRange({ startLine, endLine });
-    } else {
-      setTargetLineRange({});
+    setFileSelectionState({
+      repoId: urlRepoId,
+      selectedFile: filename,
+      targetLineRange: startLine && endLine ? { startLine, endLine } : {},
+    });
+    if (activeTab !== 'files') {
+      router.replace(buildRepoUrl(urlRepoId, 'files'));
     }
-    setActiveTab('files');
-    setShowLanding(false);
   };
 
   const handleNavigateToArchitectureLayer = (node: ArchitectureFlowNode) => {
+    if (!urlRepoId) return;
     pushNavHistory();
-    setActiveLayerFilter({
-      label: node.label,
-      count: node.files.length,
-      files: node.files,
+    setLayerFilterState({
+      repoId: urlRepoId,
+      value: {
+        label: node.label,
+        count: node.files.length,
+        files: node.files,
+      },
     });
 
     const primaryRef = node.references?.[0];
     const primaryFile = primaryRef?.filePath || node.files[0] || '';
 
     if (primaryFile) {
-      setSelectedFile(primaryFile);
-      if (primaryRef?.startLine && primaryRef?.endLine) {
-        setTargetLineRange({ startLine: primaryRef.startLine, endLine: primaryRef.endLine });
-      } else {
-        setTargetLineRange({});
-      }
+      setFileSelectionState({
+        repoId: urlRepoId,
+        selectedFile: primaryFile,
+        targetLineRange:
+          primaryRef?.startLine && primaryRef?.endLine
+            ? { startLine: primaryRef.startLine, endLine: primaryRef.endLine }
+            : {},
+      });
     }
 
-    setActiveTab('files');
-    setShowLanding(false);
+    if (activeTab !== 'files') {
+      router.replace(buildRepoUrl(urlRepoId, 'files'));
+    }
   };
 
-  const handleAskAiFromAnywhere = (prompt: string) => {
+  const handleAskAiFromAnywhere = () => {
     setIsRightPanelOpen(true);
   };
 
+  const activeRepoId = activeRepo?.id;
+
   const handlePersistGraphUiState = useCallback(
     (state: GraphPersistedUiState) => {
-      if (!activeRepo?.id) return;
+      if (!activeRepoId) return;
       setGraphUiStateByRepo((prev) => {
-        const existing = prev[activeRepo.id];
+        const existing = prev[activeRepoId];
         if (
           existing?.selectedNodeId === state.selectedNodeId &&
           existing?.layoutDirection === state.layoutDirection &&
@@ -307,17 +420,17 @@ export default function Home() {
         ) {
           return prev;
         }
-        return { ...prev, [activeRepo.id]: state };
+        return { ...prev, [activeRepoId]: state };
       });
     },
-    [activeRepo?.id]
+    [activeRepoId]
   );
 
   const handlePersistFilesUiState = useCallback(
     (state: FilesPersistedUiState) => {
-      if (!activeRepo?.id) return;
+      if (!activeRepoId) return;
       setFilesUiStateByRepo((prev) => {
-        const existing = prev[activeRepo.id];
+        const existing = prev[activeRepoId];
         if (
           existing?.activeTab === state.activeTab &&
           existing?.openTabs === state.openTabs &&
@@ -325,27 +438,27 @@ export default function Home() {
         ) {
           return prev;
         }
-        return { ...prev, [activeRepo.id]: state };
+        return { ...prev, [activeRepoId]: state };
       });
     },
-    [activeRepo?.id]
+    [activeRepoId]
   );
 
   const handlePersistAnalysisUiState = useCallback(
     (state: AnalysisPersistedUiState) => {
-      if (!activeRepo?.id) return;
+      if (!activeRepoId) return;
       setAnalysisUiStateByRepo((prev) => {
-        const existing = prev[activeRepo.id];
+        const existing = prev[activeRepoId];
         if (
           existing?.selectedPlanId === state.selectedPlanId &&
           existing?.selectedChangesetId === state.selectedChangesetId
         ) {
           return prev;
         }
-        return { ...prev, [activeRepo.id]: state };
+        return { ...prev, [activeRepoId]: state };
       });
     },
-    [activeRepo?.id]
+    [activeRepoId]
   );
 
   return (
@@ -355,40 +468,99 @@ export default function Home() {
         repositories={repositories}
         activeRepo={activeRepo}
         onSelectRepo={(repo) => {
-          pushNavHistory();
-          setActiveRepo(repo);
-          setShowLanding(false);
+          router.push(buildRepoUrl(repo.id, 'summary'));
         }}
         onOpenUploadModal={() => {
           setUploadInitialTab('zip');
           setIsUploadModalOpen(true);
         }}
         onNavigateHome={() => {
-          pushNavHistory();
-          setShowLanding(true);
+          setNavHistoryState({ repoId: null, items: [] });
         }}
-        canGoBack={navHistory.length > 0}
-        onGoBack={handleGoBack}
+        canGoBack={Boolean(urlRepoId && navHistory.length > 0)}
+        onGoBack={urlRepoId ? handleGoBack : undefined}
         theme={theme}
         onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
         onDeleteRepo={handleDeleteRepo}
       />
 
-      {/* Main Workspace Body */}
-      {showLanding ? (
-        /* Landing Showcase View */
-        <main className="flex-1 pt-14 flex flex-col items-center justify-start max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8 space-y-12">
-          <HeroSection
-            onOpenUploadZip={() => {
+      {/* Main Content */}
+      {!urlRepoId ? (
+        <main className="flex-1 pt-14 w-full">
+          <Dashboard
+            repositories={repositories}
+            isLoading={loadingRepos}
+            onOpenUploadModal={() => {
               setUploadInitialTab('zip');
               setIsUploadModalOpen(true);
             }}
-            onOpenGithubModal={() => {
-              setUploadInitialTab('github');
-              setIsUploadModalOpen(true);
-            }}
           />
-          <FeatureCards />
+        </main>
+      ) : isRepoNotFound ? (
+        <main className="flex-1 pt-14 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md rounded-2xl bg-[#1a1b1e] border border-[#48454d]/25 p-8 text-center shadow-xl space-y-5">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-[#292a2d] border border-[#fbcfe8]/20 flex items-center justify-center text-[#fbcfe8]">
+              <span className="material-symbols-outlined text-[28px]">folder_off</span>
+            </div>
+            <div className="space-y-1.5">
+              <h1 className="text-xl font-heading font-semibold text-[#e3e2e6]">
+                Repository not found
+              </h1>
+              <p className="text-xs text-[#938f98] leading-relaxed">
+                This repository does not exist or you don&apos;t have access to view it.
+              </p>
+            </div>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-[#fbcfe8] hover:bg-[#f9a8d4] text-[#3d1729] text-sm font-semibold transition-colors shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[18px]">arrow_back</span>
+              <span>Back to Dashboard</span>
+            </Link>
+          </div>
+        </main>
+      ) : !activeRepo && loadingRepoDetail ? (
+        <main className="flex-1 pt-14 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-4xl space-y-6">
+            <div className="h-8 w-56 rounded-lg bg-[#1f1f23] animate-pulse" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="h-32 rounded-2xl bg-[#1a1b1e] border border-[#48454d]/20 animate-pulse" />
+              <div className="h-32 rounded-2xl bg-[#1a1b1e] border border-[#48454d]/20 animate-pulse" />
+              <div className="h-32 rounded-2xl bg-[#1a1b1e] border border-[#48454d]/20 animate-pulse" />
+            </div>
+            <div className="h-64 rounded-2xl bg-[#1a1b1e] border border-[#48454d]/20 animate-pulse" />
+          </div>
+        </main>
+      ) : !activeRepo && isRepoFetchError ? (
+        <main className="flex-1 pt-14 flex items-center justify-center px-4 py-12">
+          <div className="w-full max-w-md rounded-2xl bg-[#1a1b1e] border border-[#48454d]/25 p-8 text-center shadow-xl space-y-5">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-[#292a2d] border border-red-500/25 flex items-center justify-center text-red-400">
+              <span className="material-symbols-outlined text-[28px]">error</span>
+            </div>
+            <div className="space-y-1.5">
+              <h1 className="text-xl font-heading font-semibold text-[#e3e2e6]">
+                Could not load repository
+              </h1>
+              <p className="text-xs text-[#938f98] leading-relaxed">
+                {(repoDetailError as Error)?.message || 'An unexpected error occurred.'}
+              </p>
+            </div>
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => refetchRepoDetail()}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#1f1f23] hover:bg-[#292a2d] border border-[#48454d]/30 text-sm font-medium text-[#e3e2e6] cursor-pointer transition-colors"
+              >
+                Try Again
+              </button>
+              <Link
+                href="/"
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-[#fbcfe8] hover:bg-[#f9a8d4] text-[#3d1729] text-sm font-semibold transition-colors"
+              >
+                Back to Dashboard
+              </Link>
+            </div>
+          </div>
         </main>
       ) : activeRepo ? (
         /* Fixed Shell Workspace Layout */
@@ -426,10 +598,12 @@ export default function Home() {
               {activeTab === 'summary' && (
                 <RepositorySummaryView
                   repo={activeRepo}
-                  onNavigateToGraph={() => setActiveTab('graph')}
+                  onNavigateToGraph={() => handleTabChange('graph')}
                   onNavigateToFiles={() => {
-                    setActiveLayerFilter(null);
-                    setActiveTab('files');
+                    if (urlRepoId) {
+                      setLayerFilterState({ repoId: urlRepoId, value: null });
+                    }
+                    handleTabChange('files');
                   }}
                   onNavigateToArchitectureNode={handleNavigateToArchitectureLayer}
                   onAskQuestion={handleAskAiFromAnywhere}
@@ -453,7 +627,11 @@ export default function Home() {
                   selectedFile={selectedFile}
                   targetLineRange={targetLineRange}
                   activeLayerFilter={activeLayerFilter}
-                  onClearFilter={() => setActiveLayerFilter(null)}
+                  onClearFilter={() => {
+                    if (urlRepoId) {
+                      setLayerFilterState({ repoId: urlRepoId, value: null });
+                    }
+                  }}
                   onFileSelect={handleSelectFileFromAnywhere}
                   onAskAi={handleAskAiFromAnywhere}
                   persistedUiState={activeRepo?.id ? filesUiStateByRepo[activeRepo.id] : undefined}
@@ -475,7 +653,7 @@ export default function Home() {
                 <div className="space-y-6 max-w-2xl">
                   <h1 className="text-xl font-heading font-semibold text-[#e3e2e6]">Settings</h1>
                   <div className="p-4 rounded-xl bg-[#1a1b1e] border border-[#48454d]/25 space-y-3">
-                    <span className="font-semibold text-xs text-[#e3e2e6] block">Database & Vector Storage</span>
+                    <span className="font-semibold text-xs text-[#e3e2e6] block">Database &amp; Vector Storage</span>
                     <p className="text-xs text-[#938f98]">
                       Connected to PostgreSQL + pgvector at <span className="font-mono text-[#fbcfe8]">localhost:5432/codegraph</span>
                     </p>
@@ -498,17 +676,7 @@ export default function Home() {
             onSelectFile={handleSelectFileFromAnywhere}
           />
         </div>
-      ) : (
-        /* Empty State when no repository is indexed */
-        <main className="flex-1 pt-14 flex items-center justify-center p-6">
-          <EmptyState
-            onOpenUpload={() => {
-              setUploadInitialTab('zip');
-              setIsUploadModalOpen(true);
-            }}
-          />
-        </main>
-      )}
+      ) : null}
 
       {/* Upload Modal (ZIP & GitHub) */}
       <UploadModal
@@ -531,5 +699,13 @@ export default function Home() {
         onClose={() => setIsIndexingModalOpen(false)}
       />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<WorkspaceShellFallback />}>
+      <CodeGraphWorkspace />
+    </Suspense>
   );
 }

@@ -28,6 +28,8 @@ export function mapBackendRepoToRepository(r: any): Repository {
     stage: r.stage,
     progress: r.progress,
     lastIndexedAt: new Date(r.updated_at || r.created_at).toLocaleDateString(),
+    createdAt: r.created_at || undefined,
+    lastOpenedAt: r.last_opened_at || null,
     stats: r.stats,
     technologies: r.technologies || [],
     summary: r.summary || {
@@ -68,6 +70,7 @@ export function useRepositories() {
       const data = await res.json();
       return (data.repositories || []).map(mapBackendRepoToRepository);
     },
+    retry: (failureCount, error: Error) => error.message !== 'UNAUTHORIZED' && failureCount < 1,
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 }
@@ -80,9 +83,12 @@ export function useRepository(repoId: string | null | undefined) {
   return useQuery({
     queryKey: repoId ? REPOSITORY_KEYS.detail(repoId) : (['repository', 'null'] as const),
     queryFn: async (): Promise<Repository> => {
-      const res = await fetch(`/api/repositories/${repoId}`);
+      const res = await fetch(`/api/repositories/${encodeURIComponent(repoId!)}`);
       if (res.status === 401) {
         throw new Error('UNAUTHORIZED');
+      }
+      if (res.status === 404) {
+        throw new Error('NOT_FOUND');
       }
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -92,8 +98,31 @@ export function useRepository(repoId: string | null | undefined) {
       return mapBackendRepoToRepository(data.repository);
     },
     enabled: Boolean(repoId),
+    retry: (failureCount, error: Error) =>
+      error.message !== 'NOT_FOUND' && error.message !== 'UNAUTHORIZED' && failureCount < 1,
     staleTime: 5 * 60 * 1000,
   });
+}
+
+/**
+ * Records that the authenticated user opened a repository (persisting last_opened_at).
+ */
+export async function markRepositoryOpened(repoId: string): Promise<string | null> {
+  const res = await fetch(`/api/repositories/${encodeURIComponent(repoId)}/open`, {
+    method: 'POST',
+  });
+  if (res.status === 401) {
+    throw new Error('UNAUTHORIZED');
+  }
+  if (res.status === 404) {
+    throw new Error('NOT_FOUND');
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to record repository open.');
+  }
+  const data = await res.json();
+  return data.last_opened_at || null;
 }
 
 /**

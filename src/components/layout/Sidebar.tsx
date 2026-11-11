@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { TabType } from '@/types';
 
 export interface SidebarProps {
@@ -25,8 +26,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside className="fixed left-0 top-14 bottom-0 w-[260px] bg-[#1a1b1e] z-40 flex flex-col border-r border-[#48454d]/20 select-none">
+      {/* Home Navigation */}
+      <div className="px-6 pt-5 pb-2 flex flex-col gap-1">
+        <Link
+          href="/"
+          className="flex items-center px-3 py-2 rounded-lg text-sm transition-colors text-left font-medium text-[#cac5ce] hover:bg-[#292a2d] hover:text-[#e3e2e6] cursor-pointer"
+        >
+          <span className="material-symbols-outlined mr-3 text-[18px]">
+            home
+          </span>
+          Home
+        </Link>
+      </div>
+
       {/* Overview Navigation */}
-      <div className="p-6 flex flex-col gap-6">
+      <div className="px-6 py-4 flex flex-col gap-4">
         <div className="text-[11px] font-mono text-[#938f98] uppercase tracking-widest font-semibold px-1">
           Overview
         </div>

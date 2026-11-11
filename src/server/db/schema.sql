@@ -23,10 +23,12 @@ CREATE TABLE IF NOT EXISTS repositories (
   summary JSONB,
   stats JSONB,
   error_message TEXT,
+  last_opened_at TIMESTAMPTZ,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+ALTER TABLE repositories ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_repositories_user_id ON repositories(user_id);
 
 -- Repository Files table

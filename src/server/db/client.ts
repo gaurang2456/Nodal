@@ -100,6 +100,7 @@ export async function ensureDatabaseSchema(): Promise<void> {
         summary JSONB,
         stats JSONB,
         error_message TEXT,
+        last_opened_at TIMESTAMPTZ,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
@@ -107,6 +108,9 @@ export async function ensureDatabaseSchema(): Promise<void> {
       -- Add user_id column if table was created in earlier phase
       ALTER TABLE repositories ADD COLUMN IF NOT EXISTS user_id UUID;
       CREATE INDEX IF NOT EXISTS idx_repositories_user_id ON repositories(user_id);
+
+      -- Add last_opened_at column if table was created before dashboard recency tracking
+      ALTER TABLE repositories ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMPTZ;
 
       -- Repository Files table
       CREATE TABLE IF NOT EXISTS repository_files (

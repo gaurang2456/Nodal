@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Repository } from '@/types';
 import { createClient } from '@/lib/supabase/client';
@@ -113,13 +114,18 @@ export const Navbar: React.FC<NavbarProps> = ({
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-14 bg-[#121316]/90 backdrop-blur-xl border-b border-[#48454d]/20 z-50 flex items-center px-6 gap-6 justify-between select-none">
+    <header className="fixed top-0 left-0 right-0 h-14 bg-[#121316]/90 backdrop-blur-xl border-b border-[#48454d]/20 z-50 flex items-center px-4 sm:px-6 gap-3 sm:gap-6 justify-between select-none">
       {/* Left: Brand & Repo/Branch Selectors */}
-      <div className="flex items-center gap-4 min-w-fit" ref={dropdownRef}>
+      <div className="flex items-center gap-3 sm:gap-4 min-w-0" ref={dropdownRef}>
         {/* Logo & Brand */}
-        <button
-          onClick={onNavigateHome}
-          className="flex items-center gap-2.5 min-w-[212px] text-left focus:outline-none group cursor-pointer"
+        <Link
+          href="/"
+          onClick={() => {
+            setIsRepoDropdownOpen(false);
+            setIsBranchDropdownOpen(false);
+            onNavigateHome();
+          }}
+          className="flex items-center gap-2.5 sm:min-w-[212px] text-left focus:outline-none group cursor-pointer shrink-0"
         >
           <div className="w-7 h-7 rounded-lg bg-[#292a2d] border border-[#fbcfe8]/30 flex items-center justify-center text-[#fbcfe8] group-hover:scale-105 transition-transform">
             <span className="material-symbols-outlined text-[17px]">hub</span>
@@ -127,7 +133,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           <span className="font-heading font-semibold text-base text-[#e3e2e6] tracking-tight group-hover:text-white transition-colors">
             CodeGraph
           </span>
-        </button>
+        </Link>
 
         {/* Back Navigation Button */}
         {onGoBack && (
@@ -233,41 +239,43 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Branch Dropdown */}
-        <div className="relative hidden sm:block">
-          <button
-            onClick={() => {
-              setIsBranchDropdownOpen(!isBranchDropdownOpen);
-              setIsRepoDropdownOpen(false);
-            }}
-            className="flex items-center gap-2 px-3 py-1.5 bg-[#1f1f23] hover:bg-[#292a2d] rounded-lg border border-[#48454d]/30 text-xs font-medium text-[#e3e2e6] transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[16px] text-[#938f98]">account_tree</span>
-            <span className="font-mono text-xs">{activeRepo?.branch || 'main'}</span>
-            <span className="material-symbols-outlined text-[14px] text-[#938f98]">expand_more</span>
-          </button>
+        {activeRepo && (
+          <div className="relative hidden sm:block">
+            <button
+              onClick={() => {
+                setIsBranchDropdownOpen(!isBranchDropdownOpen);
+                setIsRepoDropdownOpen(false);
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#1f1f23] hover:bg-[#292a2d] rounded-lg border border-[#48454d]/30 text-xs font-medium text-[#e3e2e6] transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[16px] text-[#938f98]">account_tree</span>
+              <span className="font-mono text-xs">{activeRepo.branch || 'main'}</span>
+              <span className="material-symbols-outlined text-[14px] text-[#938f98]">expand_more</span>
+            </button>
 
-          {isBranchDropdownOpen && (
-            <div className="absolute top-full left-0 mt-2 w-44 bg-[#1a1b1e] rounded-xl border border-[#48454d]/40 p-1.5 shadow-2xl z-50">
-              <div className="px-3 py-1.5 text-[10px] font-mono text-[#938f98] uppercase tracking-wider">
-                Branches
+            {isBranchDropdownOpen && (
+              <div className="absolute top-full left-0 mt-2 w-44 bg-[#1a1b1e] rounded-xl border border-[#48454d]/40 p-1.5 shadow-2xl z-50">
+                <div className="px-3 py-1.5 text-[10px] font-mono text-[#938f98] uppercase tracking-wider">
+                  Branches
+                </div>
+                <div className="space-y-0.5">
+                  {['main', 'develop', 'release/v1.0'].map((branch) => (
+                    <button
+                      key={branch}
+                      onClick={() => setIsBranchDropdownOpen(false)}
+                      className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-mono text-[#cac5ce] hover:bg-[#292a2d] hover:text-white flex items-center justify-between"
+                    >
+                      <span>{branch}</span>
+                      {branch === (activeRepo.branch || 'main') && (
+                        <span className="material-symbols-outlined text-[14px] text-[#fbcfe8]">check</span>
+                      )}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="space-y-0.5">
-                {['main', 'develop', 'release/v1.0'].map((branch) => (
-                  <button
-                    key={branch}
-                    onClick={() => setIsBranchDropdownOpen(false)}
-                    className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-mono text-[#cac5ce] hover:bg-[#292a2d] hover:text-white flex items-center justify-between"
-                  >
-                    <span>{branch}</span>
-                    {branch === (activeRepo?.branch || 'main') && (
-                      <span className="material-symbols-outlined text-[14px] text-[#fbcfe8]">check</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Right: Actions & User Profile */}

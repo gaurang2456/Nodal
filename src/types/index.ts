@@ -129,6 +129,8 @@ export interface Repository {
   stage?: string;
   progress?: number;
   lastIndexedAt?: string;
+  createdAt?: string;
+  lastOpenedAt?: string | null;
   stats?: RepositoryStats;
   technologies: Technology[];
   summary: RepositorySummary;
