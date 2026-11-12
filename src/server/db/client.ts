@@ -66,15 +66,70 @@ export async function withTransaction<T>(
 }
 
 let isSchemaInitialized = false;
+let schemaInitPromise: Promise<void> | null = null;
 
 /**
  * Ensure pgvector extension and all tables are initialized.
+ * Uses a fast read-only check first to avoid acquiring DDL or advisory locks on warm starts,
+ * and serializes migrations with transaction-scoped pg_advisory_xact_lock (pgBouncer-safe).
  */
 export async function ensureDatabaseSchema(): Promise<void> {
   if (isSchemaInitialized) return;
+  if (schemaInitPromise) return schemaInitPromise;
 
-  try {
-    const schemaSql = `
+  schemaInitPromise = (async () => {
+    try {
+      // Fast read-only check outside any lock so warm DBs never acquire ACCESS EXCLUSIVE DDL locks
+      const fastCheck = await query<{ ready: boolean }>(`
+        SELECT (
+          to_regclass('public.pull_requests') IS NOT NULL
+          AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'repositories' AND column_name = 'last_opened_at'
+          )
+          AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'feature_plans' AND column_name = 'issue_title'
+          )
+          AND EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'changeset_branches' AND column_name = 'commit_sha'
+          )
+        ) AS ready
+      `);
+      if (fastCheck.rows[0]?.ready) {
+        isSchemaInitialized = true;
+        return;
+      }
+
+      const client = await getDbPool().connect();
+      try {
+        await client.query('BEGIN');
+        await client.query('SELECT pg_advisory_xact_lock(8842110)');
+        const recheck = await client.query<{ ready: boolean }>(`
+          SELECT (
+            to_regclass('public.pull_requests') IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'repositories' AND column_name = 'last_opened_at'
+            )
+            AND EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'feature_plans' AND column_name = 'issue_title'
+            )
+            AND EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'public' AND table_name = 'changeset_branches' AND column_name = 'commit_sha'
+            )
+          ) AS ready
+        `);
+        if (recheck.rows[0]?.ready) {
+          await client.query('COMMIT');
+          isSchemaInitialized = true;
+          return;
+        }
+
+        const schemaSql = `
       -- Enable pgvector extension
       CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -197,11 +252,18 @@ export async function ensureDatabaseSchema(): Promise<void> {
         repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
         user_id UUID,
         feature_request TEXT NOT NULL,
+        issue_url TEXT,
+        issue_number INTEGER,
+        issue_title TEXT,
         plan_json JSONB NOT NULL,
         status TEXT NOT NULL DEFAULT 'COMPLETED',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_url TEXT;
+      ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_number INTEGER;
+      ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_title TEXT;
 
       CREATE INDEX IF NOT EXISTS idx_feature_plans_repo_id ON feature_plans(repository_id);
       CREATE INDEX IF NOT EXISTS idx_feature_plans_user_id ON feature_plans(user_id);
@@ -334,11 +396,22 @@ export async function ensureDatabaseSchema(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_pull_requests_pr_number ON pull_requests(github_repo_owner, github_repo_name, github_pr_number);
     `;
 
-    await query(schemaSql);
-    isSchemaInitialized = true;
-    console.log('✅ Supabase PostgreSQL + pgvector schema verified and ready.');
-  } catch (err) {
-    console.error('⚠️ Could not initialize database schema automatically:', err);
-    throw err;
-  }
+        await client.query(schemaSql);
+        await client.query('COMMIT');
+        isSchemaInitialized = true;
+        console.log('✅ Supabase PostgreSQL + pgvector schema verified and ready.');
+      } catch (innerErr) {
+        await client.query('ROLLBACK').catch(() => {});
+        throw innerErr;
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      schemaInitPromise = null;
+      console.error('⚠️ Could not initialize database schema automatically:', err);
+      throw err;
+    }
+  })();
+
+  return schemaInitPromise;
 }

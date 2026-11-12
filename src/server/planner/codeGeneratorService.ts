@@ -400,20 +400,24 @@ ${symbolsBlock || 'No direct AST symbols for these files.'}
     let rawJsonText = '';
 
     if (isGemini) {
-      const preferredModel = process.env.LLM_MODEL || 'gemini-3.6-flash';
+      const preferredModel = process.env.LLM_MODEL?.trim();
       const models = Array.from(
-        new Set([
-          preferredModel,
-          'gemini-3.6-flash',
-          'gemini-3.7-flash',
-          'gemini-flash-latest',
-          'gemini-3.5-flash',
-        ])
+        new Set(
+          [
+            preferredModel,
+            'gemini-3.6-flash',
+            'gemini-3-flash-preview',
+            'gemini-3.1-flash-lite-preview',
+            'gemini-3.5-flash',
+          ].filter(
+            (m): m is string => Boolean(m && m !== 'gemini-3.7-flash' && m !== 'gemini-flash-latest')
+          )
+        )
       );
 
       for (const model of models) {
         try {
-          const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
           const res = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -423,18 +427,29 @@ ${symbolsBlock || 'No direct AST symbols for these files.'}
                 responseMimeType: 'application/json',
               },
             }),
-            signal: AbortSignal.timeout(35000),
+            signal: AbortSignal.timeout(25000),
           });
 
           if (res.ok) {
             const data = await res.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+            const parts: Array<{ text?: string; thought?: boolean }> =
+              data.candidates?.[0]?.content?.parts || [];
+            const text =
+              parts
+                .filter((p) => !p.thought && typeof p.text === 'string')
+                .map((p) => p.text)
+                .join('')
+                .trim() || parts.find((p) => typeof p.text === 'string')?.text?.trim();
             if (text) {
               rawJsonText = text;
               break;
             }
+          } else {
+            console.warn(`[CodeGenerator] Gemini model "${model}" failed (${res.status}).`);
           }
-        } catch (_) {}
+        } catch (err: any) {
+          console.warn(`[CodeGenerator] Gemini model "${model}" error:`, err?.message || err);
+        }
       }
     } else if (openaiKey) {
       try {
@@ -509,8 +524,9 @@ ${symbolsBlock || 'No direct AST symbols for these files.'}
         (s) => s.files?.includes(fileMod.filePath) || s.symbols?.some((sym) => fileMod.symbols?.includes(sym))
       );
 
-      const methodName = relevantStep
-        ? relevantStep.title.toLowerCase().replace(/[^a-zA-Z0-9]/g, ' ').split(' ').map((w, idx) => idx === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)).join('')
+      const stepLabel = relevantStep?.title || relevantStep?.action || '';
+      const methodName = stepLabel
+        ? stepLabel.toLowerCase().replace(/[^a-zA-Z0-9]/g, ' ').split(' ').filter(Boolean).map((w, idx) => idx === 0 ? w : w.charAt(0).toUpperCase() + w.slice(1)).join('') || 'executeFeature'
         : 'executeFeature';
 
       if (orig.includes(`class ${targetSymbol}`) || orig.includes(`class `)) {

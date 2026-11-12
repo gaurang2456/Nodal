@@ -70,6 +70,196 @@ export interface GitHubPullRequestDetails {
   };
 }
 
+export interface ParsedGitHubIssueUrl {
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  normalizedUrl: string;
+}
+
+export interface GitHubIssueDetails {
+  id: number;
+  number: number;
+  title: string;
+  body: string;
+  state: 'open' | 'closed' | string;
+  html_url: string;
+  pull_request?: unknown;
+}
+
+export class GitHubApiError extends Error {
+  public status: number;
+
+  constructor(message: string, status = 500) {
+    super(message);
+    this.name = 'GitHubApiError';
+    this.status = status;
+  }
+}
+
+/**
+ * Strictly validates a GitHub issue URL matching https://github.com/<owner>/<repo>/issues/<number>.
+ * Rejects other hosts, SSRF targets, embedded credentials, and Pull Request URLs.
+ */
+export function parseGitHubIssueUrl(rawUrl: string): ParsedGitHubIssueUrl {
+  if (!rawUrl || typeof rawUrl !== 'string' || !rawUrl.trim()) {
+    throw new GitHubApiError('Please provide a GitHub issue URL.', 400);
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl.trim());
+  } catch {
+    throw new GitHubApiError(
+      'Invalid URL. Expected format: https://github.com/owner/repo/issues/123',
+      400
+    );
+  }
+
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    throw new GitHubApiError('Only https://github.com issue URLs are supported.', 400);
+  }
+
+  if (parsed.username || parsed.password) {
+    throw new GitHubApiError('Invalid GitHub URL.', 400);
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host !== 'github.com' && host !== 'www.github.com') {
+    throw new GitHubApiError(
+      'Only github.com issue URLs are allowed (e.g. https://github.com/owner/repo/issues/123).',
+      400
+    );
+  }
+
+  if (/^\/[^/]+\/[^/]+\/pull\//i.test(parsed.pathname)) {
+    throw new GitHubApiError(
+      'Pull request URLs are not supported here. Please paste a GitHub issue URL (/owner/repo/issues/123).',
+      400
+    );
+  }
+
+  const match = parsed.pathname.match(
+    /^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/issues\/([1-9][0-9]*)\/?$/
+  );
+
+  if (!match) {
+    throw new GitHubApiError(
+      'URL must match https://github.com/<owner>/<repo>/issues/<number>.',
+      400
+    );
+  }
+
+  const [, owner, repo, numStr] = match;
+  const issueNumber = Number.parseInt(numStr, 10);
+
+  return {
+    owner,
+    repo,
+    issueNumber,
+    normalizedUrl: `https://github.com/${owner}/${repo}/issues/${issueNumber}`,
+  };
+}
+
+/**
+ * Fetches a GitHub issue using optional user OAuth token (required for private repos).
+ */
+export async function fetchGitHubIssue(
+  owner: string,
+  repo: string,
+  issueNumber: number,
+  token?: string | null
+): Promise<GitHubIssueDetails> {
+  const endpoint = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}`;
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'CodeGraph-Platform/1.0',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(endpoint, {
+      headers,
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch (err: any) {
+    throw new GitHubApiError(
+      `Failed to contact GitHub while fetching issue #${issueNumber}: ${err?.message || 'Network timeout'}`,
+      504
+    );
+  }
+
+  if (!response.ok) {
+    let rawMsg = '';
+    try {
+      const errJson = await response.json();
+      rawMsg = errJson.message || '';
+    } catch {
+      rawMsg = await response.text().catch(() => '');
+    }
+    const safeMsg = token ? rawMsg.replaceAll(token, '[REDACTED_TOKEN]') : rawMsg;
+
+    if (response.status === 404) {
+      throw new GitHubApiError(
+        token
+          ? `Issue #${issueNumber} in ${owner}/${repo} was not found, or your connected GitHub account does not have access to it.`
+          : `Issue #${issueNumber} in ${owner}/${repo} was not found. If this is a private repository, connect your GitHub account with repo access.`,
+        404
+      );
+    }
+
+    if (response.status === 401) {
+      throw new GitHubApiError(
+        'Your connected GitHub token is invalid or expired. Please reconnect your GitHub account.',
+        401
+      );
+    }
+
+    if (response.status === 403) {
+      const rateLimitRemaining = response.headers.get('x-ratelimit-remaining');
+      if (rateLimitRemaining === '0') {
+        throw new GitHubApiError(
+          token
+            ? 'GitHub API rate limit exceeded. Please try again in a few minutes.'
+            : 'GitHub unauthenticated API rate limit exceeded. Connect your GitHub account or try again later.',
+          429
+        );
+      }
+      throw new GitHubApiError(
+        `GitHub denied access to ${owner}/${repo}#${issueNumber}: ${safeMsg || 'Missing permissions or token scope.'}`,
+        403
+      );
+    }
+
+    throw new GitHubApiError(
+      `GitHub API error (${response.status}): ${safeMsg || response.statusText}`,
+      response.status
+    );
+  }
+
+  const data = (await response.json()) as GitHubIssueDetails;
+  if (data.pull_request) {
+    throw new GitHubApiError(
+      `${owner}/${repo}#${issueNumber} is a pull request, not an issue.`,
+      400
+    );
+  }
+
+  return {
+    id: data.id,
+    number: data.number,
+    title: data.title || '',
+    body: data.body || '',
+    state: data.state || 'open',
+    html_url: data.html_url || `https://github.com/${owner}/${repo}/issues/${issueNumber}`,
+  };
+}
+
 export class GitHubApiClient {
   private token: string;
   private baseUrl: string = 'https://api.github.com';

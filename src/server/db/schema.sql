@@ -116,11 +116,18 @@ CREATE TABLE IF NOT EXISTS feature_plans (
   repository_id TEXT NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,
   user_id UUID,
   feature_request TEXT NOT NULL,
+  issue_url TEXT,
+  issue_number INTEGER,
+  issue_title TEXT,
   plan_json JSONB NOT NULL,
   status TEXT NOT NULL DEFAULT 'COMPLETED',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_url TEXT;
+ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_number INTEGER;
+ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_title TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_feature_plans_repo_id ON feature_plans(repository_id);
 CREATE INDEX IF NOT EXISTS idx_feature_plans_user_id ON feature_plans(user_id);

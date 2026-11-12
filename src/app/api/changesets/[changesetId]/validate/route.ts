@@ -14,7 +14,7 @@ export async function POST(
     const user = await requireUser(req);
 
     const changeset = await CodeGeneratorService.getChangesetById(changesetId);
-    if (!changeset) {
+    if (!changeset || changeset.userId !== user.id) {
       return NextResponse.json({ error: 'Changeset not found.' }, { status: 404 });
     }
 

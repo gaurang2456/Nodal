@@ -115,6 +115,7 @@ export interface Repository {
   id: string;
   name: string;
   fullName: string;
+  sourceType?: 'zip' | 'github' | string;
   url?: string;
   size?: string;
   primaryLanguage: string;
@@ -159,6 +160,8 @@ export interface IndexingStepStatus {
 }
 
 // AI Feature Planner Types
+export type PlannerStep = 'issue' | 'plan' | 'changes' | 'pr';
+
 export interface FeaturePlanArchitectureItem {
   symbol: string;
   filePath: string;
@@ -190,10 +193,12 @@ export interface FeaturePlanApiChange {
 
 export interface FeaturePlanStep {
   step: number;
-  title: string;
-  description: string;
-  files: string[];
-  symbols: string[];
+  title?: string;
+  action?: string;
+  description?: string;
+  targetFile?: string;
+  files?: string[];
+  symbols?: string[];
 }
 
 export interface FeaturePlanEvidence {
@@ -202,14 +207,54 @@ export interface FeaturePlanEvidence {
   chunkCount: number;
 }
 
+export interface ContributorLikelyCause {
+  summary: string;
+  filePath: string;
+  symbolOrFunction: string;
+  lineRange?: string;
+}
+
+export interface ContributorFileToChange {
+  filePath: string;
+  changeType: 'modify' | 'create';
+  symbolOrLines: string;
+  reason: string;
+}
+
+export interface PlanEvidenceItem {
+  filePath: string;
+  symbols: string[];
+  matchSource: 'filename' | 'symbol' | 'semantic' | 'relationship';
+  similarity?: number;
+}
+
 export interface FeaturePlanData {
+  // Contributor v2 fields
+  schemaVersion?: number;
+  issueType?: 'bug' | 'feature';
+  understanding?: string;
+  likelyCause?: ContributorLikelyCause | null;
+  filesToChange?: ContributorFileToChange[];
+  steps?: Array<{
+    step: number;
+    action: string;
+    targetFile?: string;
+    symbols?: string[];
+  }>;
+  howToTest?: string[];
+  risks?: string[];
+  retrievalConfidence?: 'high' | 'medium' | 'low';
+  confidenceNote?: string;
+  evidenceUsed?: PlanEvidenceItem[];
+
+  // Legacy / shared fields (preserved for backwards compatibility & CodeGeneratorService)
   overview: string;
-  relevantArchitecture: FeaturePlanArchitectureItem[];
+  relevantArchitecture?: FeaturePlanArchitectureItem[];
   filesToModify: FeaturePlanFileToModify[];
   filesToCreate: FeaturePlanFileToCreate[];
-  dependencies: FeaturePlanDependency[];
-  databaseChanges: string[];
-  apiChanges: FeaturePlanApiChange[];
+  dependencies?: FeaturePlanDependency[];
+  databaseChanges?: string[];
+  apiChanges?: FeaturePlanApiChange[];
   implementationSteps: FeaturePlanStep[];
   potentialSideEffects: string[];
   evidence: FeaturePlanEvidence;
@@ -220,10 +265,25 @@ export interface FeaturePlanRecord {
   repositoryId: string;
   userId?: string;
   featureRequest: string;
+  issueUrl?: string | null;
+  issueNumber?: number | null;
+  issueTitle?: string | null;
   planJson: FeaturePlanData;
   status: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface GitHubIssueFetchResult {
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  issueUrl: string;
+  title: string;
+  body: string;
+  state: string;
+  repoMismatchWarning?: string | null;
+  indexedRepo?: string | null;
 }
 
 // Phase 3 AI Code Change Generation Types

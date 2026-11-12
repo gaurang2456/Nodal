@@ -15,7 +15,7 @@ import {
   invalidateArchitecture,
   invalidateRepositoryFiles,
 } from '@/lib/api/queries';
-import { Repository, TabType, ArchitectureFlowNode } from '@/types';
+import { Repository, TabType, ArchitectureFlowNode, PlannerStep } from '@/types';
 
 import { Navbar } from '@/components/layout/Navbar';
 import { Sidebar } from '@/components/layout/Sidebar';
@@ -28,9 +28,10 @@ import { IndexingProgressModal } from '@/components/indexing/IndexingProgressMod
 import { RepositorySummaryView } from '@/components/summary/RepositorySummaryView';
 import { DependencyGraphView, GraphPersistedUiState } from '@/components/graph/DependencyGraphView';
 import { FileExplorerView, FilesPersistedUiState } from '@/components/files/FileExplorerView';
-import { AnalysisView, AnalysisPersistedUiState } from '@/components/analysis/AnalysisView';
+import { AnalysisView, AnalysisUrlUpdate } from '@/components/analysis/AnalysisView';
 
 const VALID_TABS = new Set<TabType>(['summary', 'graph', 'files', 'analysis', 'settings']);
+const VALID_PLANNER_STEPS = new Set<PlannerStep>(['issue', 'plan', 'changes', 'pr']);
 
 function parseTabParam(rawTab: string | null): TabType {
   if (rawTab && VALID_TABS.has(rawTab as TabType)) {
@@ -39,8 +40,27 @@ function parseTabParam(rawTab: string | null): TabType {
   return 'summary';
 }
 
-function buildRepoUrl(repoId: string, tab: TabType = 'summary'): string {
-  return `/?repo=${encodeURIComponent(repoId)}&tab=${encodeURIComponent(tab)}`;
+function parsePlannerStepParam(rawStep: string | null): PlannerStep | null {
+  if (rawStep && VALID_PLANNER_STEPS.has(rawStep as PlannerStep)) {
+    return rawStep as PlannerStep;
+  }
+  return null;
+}
+
+function buildRepoUrl(
+  repoId: string,
+  tab: TabType = 'summary',
+  analysisParams?: { step?: PlannerStep | null; plan?: string | null; changeset?: string | null }
+): string {
+  const params = new URLSearchParams();
+  params.set('repo', repoId);
+  params.set('tab', tab);
+  if (tab === 'analysis' && analysisParams) {
+    if (analysisParams.step) params.set('step', analysisParams.step);
+    if (analysisParams.plan) params.set('plan', analysisParams.plan);
+    if (analysisParams.changeset) params.set('changeset', analysisParams.changeset);
+  }
+  return `/?${params.toString()}`;
 }
 
 function WorkspaceShellFallback() {
@@ -65,6 +85,9 @@ function CodeGraphWorkspace() {
   const rawRepoParam = searchParams.get('repo');
   const urlRepoId = rawRepoParam && rawRepoParam.trim().length > 0 ? rawRepoParam.trim() : null;
   const activeTab = parseTabParam(searchParams.get('tab'));
+  const urlAnalysisStep = parsePlannerStepParam(searchParams.get('step'));
+  const urlPlanId = searchParams.get('plan')?.trim() || null;
+  const urlChangesetId = searchParams.get('changeset')?.trim() || null;
 
   const { data: repositories = [], isLoading: loadingRepos, error: repoError } = useRepositories();
   const {
@@ -106,7 +129,6 @@ function CodeGraphWorkspace() {
   }>({ repoId: null, value: null });
   const [graphUiStateByRepo, setGraphUiStateByRepo] = useState<Record<string, GraphPersistedUiState>>({});
   const [filesUiStateByRepo, setFilesUiStateByRepo] = useState<Record<string, FilesPersistedUiState>>({});
-  const [analysisUiStateByRepo, setAnalysisUiStateByRepo] = useState<Record<string, AnalysisPersistedUiState>>({});
 
   // Modals state
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
@@ -134,6 +156,11 @@ function CodeGraphWorkspace() {
       selectedFile: string;
       targetLineRange: { startLine?: number; endLine?: number };
       activeLayerFilter: { label: string; count: number; files: string[] } | null;
+      analysisParams?: {
+        step?: PlannerStep | null;
+        plan?: string | null;
+        changeset?: string | null;
+      };
     }[];
   }>({ repoId: null, items: [] });
 
@@ -155,6 +182,10 @@ function CodeGraphWorkspace() {
             selectedFile,
             targetLineRange,
             activeLayerFilter,
+            analysisParams:
+              activeTab === 'analysis'
+                ? { step: urlAnalysisStep, plan: urlPlanId, changeset: urlChangesetId }
+                : undefined,
           },
         ],
       };
@@ -172,8 +203,11 @@ function CodeGraphWorkspace() {
       targetLineRange: previousSnapshot.targetLineRange,
     });
     setLayerFilterState({ repoId: urlRepoId, value: previousSnapshot.activeLayerFilter });
-    if (previousSnapshot.tab !== activeTab) {
-      router.replace(buildRepoUrl(urlRepoId, previousSnapshot.tab));
+    if (previousSnapshot.tab !== activeTab || previousSnapshot.analysisParams) {
+      router.replace(
+        buildRepoUrl(urlRepoId, previousSnapshot.tab, previousSnapshot.analysisParams),
+        { scroll: false }
+      );
     }
   };
 
@@ -444,21 +478,17 @@ function CodeGraphWorkspace() {
     [activeRepoId]
   );
 
-  const handlePersistAnalysisUiState = useCallback(
-    (state: AnalysisPersistedUiState) => {
-      if (!activeRepoId) return;
-      setAnalysisUiStateByRepo((prev) => {
-        const existing = prev[activeRepoId];
-        if (
-          existing?.selectedPlanId === state.selectedPlanId &&
-          existing?.selectedChangesetId === state.selectedChangesetId
-        ) {
-          return prev;
-        }
-        return { ...prev, [activeRepoId]: state };
+  const handleSyncAnalysisUrl = useCallback(
+    (next: AnalysisUrlUpdate) => {
+      if (!urlRepoId) return;
+      const targetUrl = buildRepoUrl(urlRepoId, 'analysis', {
+        step: next.step !== undefined ? next.step : urlAnalysisStep,
+        plan: next.plan !== undefined ? next.plan : urlPlanId,
+        changeset: next.changeset !== undefined ? next.changeset : urlChangesetId,
       });
+      router.replace(targetUrl, { scroll: false });
     },
-    [activeRepoId]
+    [urlRepoId, urlAnalysisStep, urlPlanId, urlChangesetId, router]
   );
 
   return (
@@ -642,8 +672,10 @@ function CodeGraphWorkspace() {
               {activeTab === 'analysis' && (
                 <AnalysisView
                   repo={activeRepo}
-                  persistedUiState={activeRepo?.id ? analysisUiStateByRepo[activeRepo.id] : undefined}
-                  onPersistUiState={handlePersistAnalysisUiState}
+                  urlStep={urlAnalysisStep}
+                  urlPlanId={urlPlanId}
+                  urlChangesetId={urlChangesetId}
+                  onSyncAnalysisUrl={handleSyncAnalysisUrl}
                   onSelectFile={handleSelectFileFromAnywhere}
                   onAskAi={handleAskAiFromAnywhere}
                 />

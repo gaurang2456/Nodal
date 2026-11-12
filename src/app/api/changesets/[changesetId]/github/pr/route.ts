@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ensureDatabaseSchema } from '@/server/db/client';
-import { requireUser, handleAuthApiError } from '@/server/auth/authHelper';
+import { requireUser, requireRepositoryAccess, handleAuthApiError } from '@/server/auth/authHelper';
+import { CodeGeneratorService } from '@/server/planner/codeGeneratorService';
 import { GitHubWriteService } from '@/server/github/githubWriteService';
 
 /**
@@ -16,6 +17,13 @@ export async function POST(
     await ensureDatabaseSchema();
     const { changesetId } = await params;
     const user = await requireUser(req);
+
+    const changeset = await CodeGeneratorService.getChangesetById(changesetId);
+    if (!changeset || changeset.userId !== user.id) {
+      return NextResponse.json({ success: false, error: 'Changeset not found.' }, { status: 404 });
+    }
+
+    await requireRepositoryAccess(changeset.repositoryId, req);
 
     let title: string | undefined;
     let body: string | undefined;
@@ -73,6 +81,13 @@ export async function GET(
     await ensureDatabaseSchema();
     const { changesetId } = await params;
     const user = await requireUser(req);
+
+    const changeset = await CodeGeneratorService.getChangesetById(changesetId);
+    if (!changeset || changeset.userId !== user.id) {
+      return NextResponse.json({ error: 'Changeset not found.' }, { status: 404 });
+    }
+
+    await requireRepositoryAccess(changeset.repositoryId, req);
 
     const pullRequest = await GitHubWriteService.getPullRequestForChangeset(changesetId, user.id);
 

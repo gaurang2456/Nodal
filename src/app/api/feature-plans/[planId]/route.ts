@@ -12,7 +12,12 @@ export async function GET(
     const { planId } = await params;
     const user = await requireUser(req);
 
-    const plan = await FeaturePlannerService.getPlanById(planId);
+    const expectedRepoId = req.nextUrl.searchParams.get('repositoryId')?.trim() || undefined;
+
+    const plan = await FeaturePlannerService.getPlanById(planId, {
+      repositoryId: expectedRepoId,
+      userId: user.id,
+    });
     if (!plan) {
       return NextResponse.json({ error: 'Feature plan not found.' }, { status: 404 });
     }

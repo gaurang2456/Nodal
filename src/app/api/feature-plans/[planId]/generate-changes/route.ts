@@ -13,8 +13,8 @@ export async function POST(
     const { planId } = await params;
     const user = await requireUser(req);
 
-    // Verify feature plan exists and user has repository ownership
-    const plan = await FeaturePlannerService.getPlanById(planId);
+    // Verify feature plan exists and belongs to the authenticated user & repository
+    const plan = await FeaturePlannerService.getPlanById(planId, { userId: user.id });
     if (!plan) {
       return NextResponse.json({ error: 'Feature plan not found.' }, { status: 404 });
     }

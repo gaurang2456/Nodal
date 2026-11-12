@@ -33,8 +33,8 @@ export class GitHubWriteService {
       throw new Error('Changeset not found.');
     }
 
-    // 2. Verify changeset belongs to user (or matches ownership)
-    if (changeset.userId && changeset.userId !== userId) {
+    // 2. Verify changeset belongs strictly to user
+    if (changeset.userId !== userId) {
       throw new Error('Unauthorized: Changeset belongs to another user.');
     }
 
@@ -75,7 +75,7 @@ export class GitHubWriteService {
 
     const repoRow = repoRes.rows[0];
 
-    if (repoRow.user_id && repoRow.user_id !== userId) {
+    if (repoRow.user_id !== userId) {
       throw new Error('Unauthorized: Target repository belongs to another user.');
     }
 
@@ -313,7 +313,7 @@ export class GitHubWriteService {
       throw new Error('Changeset not found.');
     }
 
-    if (changeset.userId && changeset.userId !== userId) {
+    if (changeset.userId !== userId) {
       throw new Error('Unauthorized: Changeset belongs to another user.');
     }
 
@@ -351,7 +351,7 @@ export class GitHubWriteService {
     }
 
     const repoRow = repoRes.rows[0];
-    if (repoRow.user_id && repoRow.user_id !== userId) {
+    if (repoRow.user_id !== userId) {
       throw new Error('Unauthorized: Target repository belongs to another user.');
     }
 
@@ -541,7 +541,7 @@ export class GitHubWriteService {
     if (res.rows.length === 0) return null;
     const row = res.rows[0];
 
-    if (userId && row.user_id && row.user_id !== userId) {
+    if (userId && row.user_id !== userId) {
       return null;
     }
 
@@ -607,7 +607,7 @@ export class GitHubWriteService {
       throw new Error('Changeset not found.');
     }
 
-    if (changeset.userId && changeset.userId !== userId) {
+    if (changeset.userId !== userId) {
       throw new Error('Unauthorized: Changeset belongs to another user.');
     }
 
@@ -641,7 +641,7 @@ export class GitHubWriteService {
     }
 
     const repoRow = repoRes.rows[0];
-    if (repoRow.user_id && repoRow.user_id !== userId) {
+    if (repoRow.user_id !== userId) {
       throw new Error('Unauthorized: Target repository belongs to another user.');
     }
 
@@ -928,7 +928,7 @@ ${validationSection}
     if (res.rows.length === 0) return null;
     const r = res.rows[0];
 
-    if (userId && r.user_id && r.user_id !== userId) {
+    if (userId && r.user_id !== userId) {
       return null;
     }
 

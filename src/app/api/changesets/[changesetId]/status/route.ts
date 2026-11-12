@@ -13,7 +13,7 @@ export async function PATCH(
     const user = await requireUser(req);
 
     const existing = await CodeGeneratorService.getChangesetById(changesetId);
-    if (!existing) {
+    if (!existing || existing.userId !== user.id) {
       return NextResponse.json({ error: 'Changeset not found.' }, { status: 404 });
     }
 

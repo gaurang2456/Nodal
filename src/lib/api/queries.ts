@@ -6,6 +6,7 @@ import {
   FeaturePlanRecord,
   GeneratedChangeset,
   GitHubConnectionStatus,
+  GitHubIssueFetchResult,
   ChangesetBranch,
   PullRequestRecord,
   ValidationResult,
@@ -17,6 +18,7 @@ export function mapBackendRepoToRepository(r: any): Repository {
     id: r.id,
     name: r.name,
     fullName: r.full_name,
+    sourceType: r.source_type,
     url: r.github_url,
     primaryLanguage: r.primary_language || 'Code',
     framework: r.framework || 'Standard',
@@ -274,7 +276,40 @@ export function invalidateRepositoryFiles(queryClient: ReturnType<typeof useQuer
 
 export const PLAN_KEYS = {
   list: (repoId: string) => ['feature-plans', repoId] as const,
+  detail: (repoId: string, planId: string) => ['feature-plan', repoId, planId] as const,
 };
+
+/**
+ * Fetches and validates a specific feature plan by ID scoped to a repository.
+ */
+export function useValidatedPlan(repoId: string | null | undefined, planId: string | null | undefined) {
+  return useQuery<{ plan: FeaturePlanRecord | null; notFound?: boolean }>({
+    queryKey:
+      repoId && planId
+        ? PLAN_KEYS.detail(repoId, planId)
+        : (['feature-plan', 'null', 'null'] as const),
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/feature-plans/${encodeURIComponent(planId!)}?repositoryId=${encodeURIComponent(repoId!)}`
+      );
+      if (res.status === 401) {
+        throw new Error('UNAUTHORIZED');
+      }
+      if (res.status === 404) {
+        return { plan: null, notFound: true };
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to validate feature plan.');
+      }
+      const data = await res.json();
+      return { plan: data.plan || null, notFound: !data.plan };
+    },
+    enabled: Boolean(repoId && planId),
+    retry: false,
+    staleTime: 2 * 60 * 1000,
+  });
+}
 
 /**
  * Fetches and caches feature plans for a repository.
@@ -305,7 +340,47 @@ export function invalidateFeaturePlans(queryClient: ReturnType<typeof useQueryCl
 
 export const CHANGESET_KEYS = {
   list: (planId: string) => ['changesets', planId] as const,
+  detail: (repoId: string, planId: string | null | undefined, changesetId: string) =>
+    ['changeset', repoId, planId || 'any', changesetId] as const,
 };
+
+/**
+ * Fetches and validates a specific changeset by ID scoped to a repository (and optional plan).
+ */
+export function useValidatedChangeset(
+  repoId: string | null | undefined,
+  planId: string | null | undefined,
+  changesetId: string | null | undefined
+) {
+  return useQuery<{ changeset: GeneratedChangeset | null; notFound?: boolean }>({
+    queryKey:
+      repoId && changesetId
+        ? CHANGESET_KEYS.detail(repoId, planId, changesetId)
+        : (['changeset', 'null', 'null', 'null'] as const),
+    queryFn: async () => {
+      const qs = new URLSearchParams({ repositoryId: repoId! });
+      if (planId) qs.set('planId', planId);
+      const res = await fetch(
+        `/api/changesets/${encodeURIComponent(changesetId!)}?${qs.toString()}`
+      );
+      if (res.status === 401) {
+        throw new Error('UNAUTHORIZED');
+      }
+      if (res.status === 404) {
+        return { changeset: null, notFound: true };
+      }
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to validate changeset.');
+      }
+      const data = await res.json();
+      return { changeset: data.changeset || null, notFound: !data.changeset };
+    },
+    enabled: Boolean(repoId && changesetId),
+    retry: false,
+    staleTime: 2 * 60 * 1000,
+  });
+}
 
 /**
  * Fetches and caches changesets for a feature plan.
@@ -431,6 +506,25 @@ export function useChangesetValidation(changesetId: string | null | undefined) {
 
 export function invalidateValidation(queryClient: ReturnType<typeof useQueryClient>, changesetId: string) {
   return queryClient.invalidateQueries({ queryKey: VALIDATION_KEYS.detail(changesetId) });
+}
+
+export async function fetchRepositoryGitHubIssue(
+  repoId: string,
+  issueUrl: string
+): Promise<GitHubIssueFetchResult> {
+  const res = await fetch(`/api/repositories/${encodeURIComponent(repoId)}/github-issue`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ issueUrl }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    throw new Error(data.error || 'UNAUTHORIZED');
+  }
+  if (!res.ok) {
+    throw new Error(data.error || 'Failed to fetch GitHub issue.');
+  }
+  return data.issue as GitHubIssueFetchResult;
 }
 
 

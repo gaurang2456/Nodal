@@ -32,6 +32,8 @@ export interface DiffViewerProps {
   onReject?: (changesetId: string) => Promise<void>;
   onRegenerate?: () => Promise<void>;
   isGenerating?: boolean;
+  hasGitHubUpstream?: boolean;
+  onOpenPrStep?: () => void;
 }
 
 const VALIDATION_PROGRESS_STAGES = [
@@ -52,6 +54,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
   onReject,
   onRegenerate,
   isGenerating = false,
+  hasGitHubUpstream = true,
+  onOpenPrStep,
 }) => {
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [diffViewMode, setDiffViewMode] = useState<'unified' | 'split'>('unified');
@@ -623,23 +627,27 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       ) : null}
 
       {/* GitHub Status & PR Readiness Indicator */}
-      <div className="p-3.5 rounded-2xl bg-[#13151b] border border-[#48454d]/30 text-xs font-mono flex items-center justify-between shadow-md animate-in fade-in">
+      <div className="p-3.5 rounded-2xl bg-[#13151b] border border-[#48454d]/30 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md animate-in fade-in">
         <div className="flex items-center gap-3">
           <div
             className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
-              githubConnection?.connected
+              !hasGitHubUpstream
+                ? 'bg-[#292a2d] text-[#938f98] border border-[#48454d]/30'
+                : githubConnection?.connected
                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                 : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
             }`}
           >
             <span className="material-symbols-outlined text-[17px]">
-              {githubConnection?.connected ? 'check_circle' : 'warning'}
+              {!hasGitHubUpstream ? 'folder_zip' : githubConnection?.connected ? 'check_circle' : 'warning'}
             </span>
           </div>
           <div>
             <div className="font-bold text-white flex items-center gap-2">
               <span>GitHub Status:</span>
-              {githubConnection?.connected ? (
+              {!hasGitHubUpstream ? (
+                <span className="text-[#938f98]">ZIP upload (no GitHub upstream)</span>
+              ) : githubConnection?.connected ? (
                 <span className="text-emerald-300">
                   Connected as @{githubConnection.githubLogin}
                 </span>
@@ -648,15 +656,27 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               )}
             </div>
             <div className="text-[11px] text-[#938f98]">
-              {githubConnection?.connected
-                ? 'Ready for Pull Request creation'
+              {!hasGitHubUpstream
+                ? 'Pull requests are disabled because this repository was uploaded as a ZIP archive without a GitHub upstream remote.'
+                : githubConnection?.connected
+                ? 'Ready for Pull Request workflow'
                 : 'Connect GitHub to create a Pull Request'}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {githubConnection?.connected ? (
+        <div className="flex items-center gap-2 shrink-0">
+          {!hasGitHubUpstream ? (
+            <button
+              type="button"
+              disabled
+              title="Uploaded ZIP repositories have no GitHub upstream remote"
+              className="px-3.5 py-1.5 rounded-xl bg-[#1c1e26] border border-[#48454d]/30 text-[#938f98] text-[11px] font-mono flex items-center gap-1.5 cursor-not-allowed opacity-65"
+            >
+              <span className="material-symbols-outlined text-[15px]">merge_type</span>
+              <span>Create PR</span>
+            </button>
+          ) : githubConnection?.connected ? (
             changesetBranch ? (
               <a
                 href={changesetBranch.htmlUrl}
@@ -677,6 +697,15 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
               >
                 <span className="material-symbols-outlined text-[15px]">fork_right</span>
                 <span>{isCreatingBranch ? 'Creating Branch...' : 'Create GitHub Branch'}</span>
+              </button>
+            ) : onOpenPrStep ? (
+              <button
+                type="button"
+                onClick={onOpenPrStep}
+                className="px-3.5 py-1.5 rounded-xl bg-[#70485c]/40 hover:bg-[#70485c]/60 border border-[#fbcfe8]/40 text-[#fbcfe8] text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
+              >
+                <span className="material-symbols-outlined text-[15px]">merge_type</span>
+                <span>Create PR</span>
               </button>
             ) : (
               <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
