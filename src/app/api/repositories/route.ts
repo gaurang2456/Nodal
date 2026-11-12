@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
 
     // Return only repositories strictly belonging to the authenticated user
     const result = await query(
-      `SELECT id, name, full_name, source_type, github_url, branch, user_id, status, stage, progress,
+      `SELECT id, name, full_name, source_type, github_url, branch, indexed_commit_sha, user_id, status, stage, progress,
               file_count, folder_count, line_count, token_count, primary_language, framework,
               technologies, summary, stats, error_message, last_opened_at, created_at, updated_at
        FROM repositories
@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     );
 
     return NextResponse.json({ repositories: result.rows });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return handleAuthApiError(error);
   }
 }
@@ -34,12 +34,12 @@ export async function POST(req: NextRequest) {
 
     const contentType = req.headers.get('content-type') || '';
 
-    let repositoryId = `repo-${Date.now()}`;
+    const repositoryId = `repo-${Date.now()}`;
     let repoName = 'Uploaded-Repository';
     let fullName = 'local/uploaded-repository';
     let sourceType: 'zip' | 'github' = 'zip';
     let githubUrl: string | undefined = undefined;
-    let extractorFn: () => Promise<any>;
+    let extractorFn: () => Promise<Awaited<ReturnType<typeof extractZipArchive>>>;
 
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
@@ -78,7 +78,13 @@ export async function POST(req: NextRequest) {
       sourceType = 'github';
 
       extractorFn = async () => {
-        const { files } = await downloadGitHubRepository(inputUrl);
+        const { info: downloadedInfo, files } = await downloadGitHubRepository(inputUrl);
+        await query(
+          `UPDATE repositories
+           SET branch = $2, indexed_commit_sha = $3, updated_at = NOW()
+           WHERE id = $1`,
+          [repositoryId, downloadedInfo.defaultBranch, downloadedInfo.commitSha || null]
+        );
         return files;
       };
     }
@@ -107,7 +113,7 @@ export async function POST(req: NextRequest) {
       },
       { status: 201 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     return handleAuthApiError(error);
   }
 }

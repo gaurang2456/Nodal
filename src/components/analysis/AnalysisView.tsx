@@ -11,13 +11,21 @@ import {
   PlanEvidenceItem,
 } from '@/types';
 import { useQueryClient } from '@tanstack/react-query';
+import { createClient } from '@/lib/supabase/client';
 import {
   useFeaturePlans,
   useValidatedPlan,
   useChangesets,
   useValidatedChangeset,
+  useGitHubConnection,
+  useChangesetBranch,
+  useChangesetPR,
+  useUpstreamStatus,
   invalidateFeaturePlans,
   invalidateChangesets,
+  invalidateChangesetBranch,
+  invalidateChangesetPR,
+  GITHUB_KEYS,
   fetchRepositoryGitHubIssue,
 } from '@/lib/api/queries';
 import { DiffViewer } from './DiffViewer';
@@ -199,6 +207,30 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   const [urlValidationNotice, setUrlValidationNotice] = useState<string | null>(null);
   const [isEvidenceExpanded, setIsEvidenceExpanded] = useState(false);
 
+  // Rethink Plan state
+  const [showRethinkPlanBox, setShowRethinkPlanBox] = useState(false);
+  const [rethinkPlanFeedback, setRethinkPlanFeedback] = useState('');
+  const [isRethinkingPlan, setIsRethinkingPlan] = useState(false);
+  const [rethinkPlanError, setRethinkPlanError] = useState<{
+    message: string;
+    retryable: boolean;
+  } | null>(null);
+
+  // Rethink Changes state
+  const [showRethinkChangesBox, setShowRethinkChangesBox] = useState(false);
+  const [rethinkChangesFeedback, setRethinkChangesFeedback] = useState('');
+  const [isRethinkingChanges, setIsRethinkingChanges] = useState(false);
+  const [rethinkChangesError, setRethinkChangesError] = useState<string | null>(null);
+
+  // Contributor PR step state
+  const [prTitleDraftByCs, setPrTitleDraftByCs] = useState<Record<string, string>>({});
+  const [prBodyDraftByCs, setPrBodyDraftByCs] = useState<Record<string, string>>({});
+  const [isCreatingOneClickPr, setIsCreatingOneClickPr] = useState(false);
+  const [oneClickPrError, setOneClickPrError] = useState<string | null>(null);
+  const [isConnectingGitHub, setIsConnectingGitHub] = useState(false);
+
+  const supabase = useMemo(() => createClient(), []);
+
   // Previous plans list
   const { data: plansData } = useFeaturePlans(repo.id);
   const previousPlans = useMemo(() => plansData?.plans || [], [plansData?.plans]);
@@ -242,6 +274,31 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     }
     return allChangesets[0] || null;
   }, [urlChangesetId, validatedChangesetRes, allChangesets]);
+
+  // All versions of the active plan (sharing rootPlanId)
+  const planVersions: FeaturePlanRecord[] = useMemo(() => {
+    if (!currentPlan) return [];
+    const rootId = currentPlan.rootPlanId || currentPlan.id;
+    const unique = new Map<string, FeaturePlanRecord>();
+    for (const p of previousPlans) {
+      if (p.id === rootId || (p.rootPlanId || p.id) === rootId) {
+        unique.set(p.id, p);
+      }
+    }
+    unique.set(currentPlan.id, currentPlan);
+    return Array.from(unique.values()).sort(
+      (a, b) =>
+        (a.version || 1) - (b.version || 1) ||
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+    );
+  }, [currentPlan, previousPlans]);
+
+  // GitHub PR & upstream hooks (used seamlessly in Step 4)
+  const { data: githubConnection } = useGitHubConnection();
+  const { data: changesetBranchData } = useChangesetBranch(currentChangeset?.id);
+  const changesetBranch = changesetBranchData?.branch || null;
+  const { data: changesetPrData } = useChangesetPR(currentChangeset?.id);
+  const existingPr = changesetPrData?.pullRequest || null;
 
   // Clean up invalid URL params once server validation rejects them
   useEffect(() => {
@@ -307,6 +364,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
     validatedChangesetRes?.notFound,
   ]);
 
+  const { data: upstreamStatus } = useUpstreamStatus(
+    repo.id,
+    hasGitHubUpstream && activeStep === 'pr'
+  );
+
   // Plan loading ticker
   useEffect(() => {
     if (!isGeneratingPlan) return;
@@ -350,8 +412,8 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         : issue.title;
       setIssueText(formattedBody);
       setIssueUrlInput(issue.issueUrl);
-    } catch (err: any) {
-      setIssueFetchError(err?.message || 'Failed to fetch GitHub issue.');
+    } catch (err: unknown) {
+      setIssueFetchError(err instanceof Error ? err.message : 'Failed to fetch GitHub issue.');
     } finally {
       setIsFetchingIssue(false);
     }
@@ -398,9 +460,9 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           changeset: null,
         });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       setPlanError({
-        message: err?.message || 'Network error while generating plan.',
+        message: err instanceof Error ? err.message : 'Network error while generating plan.',
         retryable: true,
       });
     } finally {
@@ -432,8 +494,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
           changeset: data.changeset.id,
         });
       }
-    } catch (err: any) {
-      setCodeGenError(err?.message || 'An error occurred while generating code changes.');
+    } catch (err: unknown) {
+      setCodeGenError(
+        err instanceof Error ? err.message : 'An error occurred while generating code changes.'
+      );
     } finally {
       setIsGeneratingCode(false);
     }
@@ -466,6 +530,196 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       }
     } catch (err) {
       console.error('Error rejecting changeset:', err);
+    }
+  };
+
+  const handleRethinkPlan = async () => {
+    if (!currentPlan) return;
+    setIsRethinkingPlan(true);
+    setRethinkPlanError(null);
+    setLoadingStageIdx(0);
+
+    try {
+      const res = await fetch(
+        `/api/feature-plans/${encodeURIComponent(currentPlan.id)}/rethink`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ feedback: rethinkPlanFeedback.trim() || undefined }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setRethinkPlanError({
+          message: data.error || 'Failed to rethink implementation plan.',
+          retryable: data.retryable !== false,
+        });
+        return;
+      }
+
+      if (data.plan) {
+        setShowRethinkPlanBox(false);
+        setRethinkPlanFeedback('');
+        await invalidateFeaturePlans(queryClient, repo.id);
+        onSyncAnalysisUrl?.({
+          step: 'plan',
+          plan: data.plan.id,
+          changeset: null,
+        });
+      }
+    } catch (err: unknown) {
+      setRethinkPlanError({
+        message: err instanceof Error ? err.message : 'Network error while rethinking plan.',
+        retryable: true,
+      });
+    } finally {
+      setIsRethinkingPlan(false);
+    }
+  };
+
+  const handleRethinkChanges = async () => {
+    if (!currentPlan || !currentChangeset) return;
+    setIsRethinkingChanges(true);
+    setIsGeneratingCode(true);
+    setRethinkChangesError(null);
+    setCodeGenError(null);
+    setCodeGenStageIdx(0);
+
+    try {
+      const res = await fetch(
+        `/api/feature-plans/${encodeURIComponent(currentPlan.id)}/generate-changes`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            feedback: rethinkChangesFeedback.trim() || undefined,
+            parentChangesetId: currentChangeset.id,
+          }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to rethink code changes.');
+      }
+
+      if (data.changeset) {
+        setShowRethinkChangesBox(false);
+        setRethinkChangesFeedback('');
+        await invalidateChangesets(queryClient, currentPlan.id);
+        onSyncAnalysisUrl?.({
+          step: 'changes',
+          plan: currentPlan.id,
+          changeset: data.changeset.id,
+        });
+      }
+    } catch (err: unknown) {
+      setRethinkChangesError(
+        err instanceof Error ? err.message : 'An error occurred while rethinking code changes.'
+      );
+    } finally {
+      setIsRethinkingChanges(false);
+      setIsGeneratingCode(false);
+    }
+  };
+
+  const handleConnectGitHub = async () => {
+    setIsConnectingGitHub(true);
+    try {
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: `${origin}/auth/github/callback`,
+          scopes: 'repo',
+        },
+      });
+    } catch {
+      setIsConnectingGitHub(false);
+    }
+  };
+
+  const predictedBranchName = useMemo(() => {
+    if (!currentPlan || !currentChangeset) return 'codegraph/feature';
+    if (changesetBranch?.branchName) return changesetBranch.branchName;
+    if (currentPlan.issueNumber) {
+      const sourceText = currentPlan.issueTitle || currentPlan.featureRequest || 'fix';
+      const slug = sourceText
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 40)
+        .replace(/-+$/g, '');
+      return `codegraph/${currentPlan.issueNumber}-${slug || 'fix'}`;
+    }
+    const cleanId = currentPlan.id.replace(/^fp-/, '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
+    return `codegraph/feature-plan-${cleanId}-v${currentChangeset.version}`.toLowerCase();
+  }, [currentPlan, currentChangeset, changesetBranch?.branchName]);
+
+  const defaultPrTitle = useMemo(() => {
+    if (!currentPlan || !currentChangeset) return '';
+    const seed = currentPlan.issueTitle || currentPlan.featureRequest || currentChangeset.summary;
+    return `[CodeGraph] ${seed.slice(0, 80)}`;
+  }, [currentPlan, currentChangeset]);
+
+  const defaultPrBody = useMemo(() => {
+    if (!currentPlan || !currentChangeset) return '';
+    const fixesLine = currentPlan.issueNumber ? `Fixes #${currentPlan.issueNumber}\n\n` : '';
+    const filesSummary = currentChangeset.changes
+      .map((c) => `- **${c.changeType.toUpperCase()}** \`${c.filePath}\``)
+      .join('\n');
+    return `${fixesLine}## Summary\n${currentChangeset.summary || currentPlan.featureRequest}\n\n## Changes\n${filesSummary}`;
+  }, [currentPlan, currentChangeset]);
+
+  const activePrTitle = currentChangeset
+    ? (prTitleDraftByCs[currentChangeset.id] ?? defaultPrTitle)
+    : '';
+  const activePrBody = currentChangeset
+    ? (prBodyDraftByCs[currentChangeset.id] ?? defaultPrBody)
+    : '';
+
+  const handleCreateOneClickPr = async () => {
+    if (!currentChangeset) return;
+    setIsCreatingOneClickPr(true);
+    setOneClickPrError(null);
+
+    try {
+      const res = await fetch(
+        `/api/changesets/${encodeURIComponent(currentChangeset.id)}/github/pr`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            oneClick: true,
+            autoApprove: true,
+            title: activePrTitle.trim() || undefined,
+            body: activePrBody.trim() || undefined,
+          }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create Pull Request.');
+      }
+
+      if (data.branch) {
+        queryClient.setQueryData(GITHUB_KEYS.branch(currentChangeset.id), { branch: data.branch });
+        invalidateChangesetBranch(queryClient, currentChangeset.id);
+      }
+      if (data.pullRequest) {
+        queryClient.setQueryData(GITHUB_KEYS.pr(currentChangeset.id), {
+          pullRequest: data.pullRequest,
+        });
+        invalidateChangesetPR(queryClient, currentChangeset.id);
+      }
+      if (currentPlan) {
+        invalidateChangesets(queryClient, currentPlan.id);
+      }
+    } catch (err: unknown) {
+      setOneClickPrError(
+        err instanceof Error ? err.message : 'An error occurred while creating the Pull Request.'
+      );
+    } finally {
+      setIsCreatingOneClickPr(false);
     }
   };
 
@@ -807,15 +1061,17 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         </section>
       )}
 
-      {/* Plan Generation Progress */}
-      {isGeneratingPlan && (
+      {/* Plan Generation / Rethink Progress */}
+      {(isGeneratingPlan || isRethinkingPlan) && (
         <section className="bg-[#13151b]/90 border border-[#fbcfe8]/30 rounded-3xl p-8 shadow-2xl flex flex-col items-center justify-center text-center space-y-4">
           <div className="w-12 h-12 rounded-2xl bg-[#241c2c] border border-[#fbcfe8]/50 flex items-center justify-center text-[#fbcfe8] shadow-xl">
             <div className="w-6 h-6 rounded-full border-2 border-[#fbcfe8] border-t-transparent animate-spin" />
           </div>
           <div className="space-y-1">
             <h3 className="text-sm font-heading font-semibold text-white">
-              {LOADING_STAGES[loadingStageIdx]}
+              {isRethinkingPlan
+                ? 'Rethinking plan with your feedback...'
+                : LOADING_STAGES[loadingStageIdx]}
             </h3>
             <p className="text-xs font-mono text-[#938f98]">
               Grounding recommendations in indexed repository files and AST symbols
@@ -825,11 +1081,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
       )}
 
       {/* STEP 2: CONTRIBUTOR PLAN VIEW */}
-      {activeStep === 'plan' && !isGeneratingPlan && currentPlan && normalizedPlan && (
+      {activeStep === 'plan' && !isGeneratingPlan && !isRethinkingPlan && currentPlan && normalizedPlan && (
         <div className="space-y-5 animate-in fade-in duration-200">
           {/* Action Toolbar */}
           <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-[#161820]/95 border border-[#48454d]/30 rounded-2xl p-4 shadow-xl">
-            <div className="space-y-1 min-w-0">
+            <div className="space-y-1.5 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold uppercase tracking-wider border ${
@@ -840,6 +1096,40 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
                 >
                   {normalizedPlan.issueType}
                 </span>
+
+                {/* Plan Version Switcher (v1, v2, ...) */}
+                <div className="flex items-center gap-1 bg-[#1c1e26] border border-[#48454d]/30 rounded-lg p-0.5">
+                  {planVersions.map((verPlan) => {
+                    const verNum = verPlan.version || 1;
+                    const isSelected = verPlan.id === currentPlan.id;
+                    return (
+                      <button
+                        key={verPlan.id}
+                        type="button"
+                        title={
+                          verPlan.feedback
+                            ? `v${verNum} — Feedback: "${verPlan.feedback}"`
+                            : `Plan version ${verNum}`
+                        }
+                        onClick={() => {
+                          onSyncAnalysisUrl?.({
+                            step: 'plan',
+                            plan: verPlan.id,
+                            changeset: null,
+                          });
+                        }}
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold transition-colors cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#fbcfe8] text-[#3d1729]'
+                            : 'text-[#cac5ce] hover:text-white hover:bg-[#292a2d]'
+                        }`}
+                      >
+                        v{verNum}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 {currentPlan.issueNumber && currentPlan.issueUrl && (
                   <a
                     href={currentPlan.issueUrl}
@@ -855,6 +1145,11 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               <div className="text-sm font-heading font-semibold text-white line-clamp-2">
                 {currentPlan.issueTitle || currentPlan.featureRequest}
               </div>
+              {currentPlan.feedback && (
+                <div className="text-[11px] font-mono text-[#fbcfe8]/90">
+                  Feedback applied in v{currentPlan.version || 1}: &ldquo;{currentPlan.feedback}&rdquo;
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5 shrink-0">
@@ -868,9 +1163,16 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
               <button
                 type="button"
-                disabled
-                title="Rethink plan with feedback will be enabled in Phase 2"
-                className="py-2 px-3 rounded-xl bg-[#1c1e26] border border-[#48454d]/35 text-xs font-mono text-[#938f98] flex items-center gap-1.5 opacity-60 cursor-not-allowed"
+                onClick={() => {
+                  setShowRethinkPlanBox((v) => !v);
+                  setRethinkPlanError(null);
+                }}
+                disabled={isGeneratingCode || isRethinkingPlan}
+                className={`py-2 px-3 rounded-xl border text-xs font-mono flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  showRethinkPlanBox
+                    ? 'bg-[#241c2c] border-[#fbcfe8]/50 text-[#fbcfe8]'
+                    : 'bg-[#1c1e26] hover:bg-[#262832] border-[#48454d]/40 text-[#e3e2e6]'
+                }`}
               >
                 <span className="material-symbols-outlined text-[15px]">psychology_alt</span>
                 <span>Rethink plan</span>
@@ -908,6 +1210,70 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               )}
             </div>
           </div>
+
+          {/* Inline Rethink Plan Input Box */}
+          {showRethinkPlanBox && (
+            <div className="p-4 rounded-2xl bg-[#161820] border border-[#fbcfe8]/35 space-y-3 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-mono font-semibold text-[#fbcfe8]">
+                  What should be different? (Optional)
+                </label>
+                <span className="text-[10px] font-mono text-[#938f98]">
+                  Creates v{planVersions.length + 1} linked to v{currentPlan.version || 1} — earlier versions are kept
+                </span>
+              </div>
+              <textarea
+                value={rethinkPlanFeedback}
+                onChange={(e) => setRethinkPlanFeedback(e.target.value)}
+                rows={3}
+                placeholder="e.g., Avoid creating a new hook file and keep state inside Profile.js, or also check how form validation works..."
+                className="w-full bg-[#1c1e26] border border-[#48454d]/40 rounded-xl p-3 text-xs font-mono text-white placeholder:text-[#6a6770] focus:border-[#fbcfe8]/60 focus:outline-none resize-y"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRethinkPlanBox(false);
+                    setRethinkPlanError(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#1c1e26] hover:bg-[#262832] border border-[#48454d]/35 text-xs font-mono text-[#cac5ce] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRethinkPlan}
+                  disabled={isRethinkingPlan}
+                  className="px-4 py-1.5 rounded-xl bg-[#fbcfe8] hover:bg-[#f9a8d4] text-[#3d1729] text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[15px]">autorenew</span>
+                  <span>Regenerate plan</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {rethinkPlanError && (
+            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/35 text-red-200 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <span className="material-symbols-outlined text-[18px] text-red-400 shrink-0 mt-0.5">
+                  error
+                </span>
+                <span className="leading-relaxed">{rethinkPlanError.message}</span>
+              </div>
+              {rethinkPlanError.retryable && (
+                <button
+                  type="button"
+                  onClick={handleRethinkPlan}
+                  disabled={isRethinkingPlan}
+                  className="px-3.5 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 border border-red-400/40 text-red-100 font-bold text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <span className="material-symbols-outlined text-[15px]">refresh</span>
+                  <span>Retry</span>
+                </button>
+              )}
+            </div>
+          )}
 
           {codeGenError && (
             <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-mono flex items-start gap-2">
@@ -1220,9 +1586,16 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             <div className="flex items-center gap-2.5">
               <button
                 type="button"
-                disabled
-                title="Rethink changes with feedback will be enabled in Phase 2"
-                className="py-1.5 px-3 rounded-xl bg-[#1c1e26] border border-[#48454d]/35 text-xs font-mono text-[#938f98] flex items-center gap-1.5 opacity-60 cursor-not-allowed"
+                onClick={() => {
+                  setShowRethinkChangesBox((v) => !v);
+                  setRethinkChangesError(null);
+                }}
+                disabled={isGeneratingCode || isRethinkingChanges}
+                className={`py-1.5 px-3 rounded-xl border text-xs font-mono flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  showRethinkChangesBox
+                    ? 'bg-[#241c2c] border-[#fbcfe8]/50 text-[#fbcfe8]'
+                    : 'bg-[#1c1e26] hover:bg-[#262832] border-[#48454d]/40 text-[#e3e2e6]'
+                }`}
               >
                 <span className="material-symbols-outlined text-[15px]">psychology_alt</span>
                 <span>Rethink changes</span>
@@ -1251,6 +1624,55 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Inline Rethink Changes Input Box */}
+          {showRethinkChangesBox && (
+            <div className="p-4 rounded-2xl bg-[#161820] border border-[#fbcfe8]/35 space-y-3 animate-in fade-in duration-150">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-xs font-mono font-semibold text-[#fbcfe8]">
+                  What should be different? (Optional)
+                </label>
+                <span className="text-[10px] font-mono text-[#938f98]">
+                  Creates changeset v{allChangesets.length + 1} linked to v{currentChangeset.version} — earlier versions are kept
+                </span>
+              </div>
+              <textarea
+                value={rethinkChangesFeedback}
+                onChange={(e) => setRethinkChangesFeedback(e.target.value)}
+                rows={3}
+                placeholder="e.g., Keep error messages inline instead of using alert(), or preserve existing helper signatures..."
+                className="w-full bg-[#1c1e26] border border-[#48454d]/40 rounded-xl p-3 text-xs font-mono text-white placeholder:text-[#6a6770] focus:border-[#fbcfe8]/60 focus:outline-none resize-y"
+              />
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRethinkChangesBox(false);
+                    setRethinkChangesError(null);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#1c1e26] hover:bg-[#262832] border border-[#48454d]/35 text-xs font-mono text-[#cac5ce] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleRethinkChanges}
+                  disabled={isRethinkingChanges || isGeneratingCode}
+                  className="px-4 py-1.5 rounded-xl bg-[#fbcfe8] hover:bg-[#f9a8d4] text-[#3d1729] text-xs font-mono font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[15px]">autorenew</span>
+                  <span>Regenerate changes</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {rethinkChangesError && (
+            <div className="p-3.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-mono flex items-start gap-2">
+              <span className="material-symbols-outlined text-[17px] text-red-400 shrink-0">error</span>
+              <span>{rethinkChangesError}</span>
+            </div>
+          )}
 
           <DiffViewer
             changeset={currentChangeset}
@@ -1281,13 +1703,18 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
       {/* STEP 4: PULL REQUEST */}
       {activeStep === 'pr' && currentPlan && currentChangeset && (
-        <section className="bg-[#13151b]/95 border border-[#48454d]/35 rounded-3xl p-6 shadow-xl space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 text-[#fbcfe8]">
+        <section className="bg-[#13151b]/95 border border-[#48454d]/35 rounded-3xl p-6 shadow-xl space-y-5 animate-in fade-in duration-200">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#48454d]/25">
+            <div className="flex items-center gap-2.5 text-[#fbcfe8]">
               <span className="material-symbols-outlined text-[20px]">merge_type</span>
-              <h2 className="text-sm font-mono font-bold uppercase tracking-wider">
-                Create Pull Request
-              </h2>
+              <div>
+                <h2 className="text-sm font-mono font-bold uppercase tracking-wider">
+                  Create Pull Request
+                </h2>
+                <p className="text-[11px] font-mono text-[#938f98]">
+                  Changeset v{currentChangeset.version} · {currentChangeset.changes.length} files
+                </p>
+              </div>
             </div>
             <button
               type="button"
@@ -1310,30 +1737,214 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-[#1c1e26] border border-[#48454d]/30 text-xs font-mono text-[#cac5ce] space-y-2">
-                <p>
-                  Contributor fork-first PR creation (auto-forking when you lack push access, creating <span className="text-[#fbcfe8]">codegraph/{currentPlan.issueNumber || 'issue'}-...</span>, syncing upstream, and prefilling <span className="text-white">Fixes #{currentPlan.issueNumber || 'N'}</span>) arrives in Phase 2.
-                </p>
-                <p className="text-[#938f98]">
-                  In the meantime, if you have write access to <strong className="text-white">{repo.fullName}</strong>, you can approve and stage a branch directly from <strong className="text-white">Code changes</strong>.
+              {/* Target Upstream & Fork Strategy Card */}
+              <div className="p-4 rounded-2xl bg-[#161820] border border-[#48454d]/30 text-xs font-mono space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-[#e3e2e6]">
+                    <span className="text-[#938f98]">Target upstream:</span>
+                    <strong className="text-white">{repo.fullName}</strong>
+                    <span className="px-2 py-0.5 rounded bg-[#292a2d] text-[10px] text-[#b7c8e1]">
+                      base: {upstreamStatus?.branch || repo.branch || 'main'}
+                    </span>
+                  </div>
+
+                  {upstreamStatus?.hasPushAccess === false || changesetBranch?.metadata?.isFork ? (
+                    <span className="px-2.5 py-0.5 rounded-md bg-sky-500/15 border border-sky-500/30 text-sky-300 text-[10px] font-bold uppercase tracking-wider">
+                      Contributor Fork Flow
+                    </span>
+                  ) : upstreamStatus?.hasPushAccess === true ? (
+                    <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold uppercase tracking-wider">
+                      Direct Branch Flow
+                    </span>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 text-[#cac5ce]">
+                  <span className="text-[#938f98]">Branch:</span>
+                  <code className="px-2 py-0.5 rounded bg-[#1c1e26] border border-[#48454d]/30 text-[#fbcfe8]">
+                    {predictedBranchName}
+                  </code>
+                  {repo.indexedCommitSha && (
+                    <span className="text-[11px] text-[#938f98]">
+                      · Indexed at <code className="text-[#cac5ce]">{repo.indexedCommitSha.slice(0, 7)}</code>
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-[#938f98] leading-relaxed">
+                  {upstreamStatus?.hasPushAccess === false
+                    ? 'You do not have direct write access to this upstream repository. CodeGraph will fork (or reuse your fork), branch cleanly from upstream, commit your approved changes, and open a cross-repo PR.'
+                    : upstreamStatus?.hasPushAccess === true
+                    ? 'You have write access to this repository. CodeGraph will create a dedicated branch (never modifying the default branch), commit, and open a PR.'
+                    : 'CodeGraph never pushes to the default branch. Based on your GitHub permissions, it either branches directly or automatically forks into your account and opens a cross-repo PR.'}
                 </p>
               </div>
-              <DiffViewer
-                changeset={currentChangeset}
-                allChangesets={allChangesets}
-                onSelectChangeset={(id) => {
-                  onSyncAnalysisUrl?.({
-                    step: 'pr',
-                    plan: currentPlan.id,
-                    changeset: id,
-                  });
-                }}
-                onApprove={handleApproveChangeset}
-                onReject={handleRejectChangeset}
-                onRegenerate={handleImplementPlan}
-                isGenerating={isGeneratingCode}
-                hasGitHubUpstream={hasGitHubUpstream}
-              />
+
+              {/* Upstream Moved Warning */}
+              {(upstreamStatus?.upstreamMoved || changesetBranch?.metadata?.upstreamMovedWarning) && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/35 text-amber-200 text-xs font-mono flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-[18px] text-amber-300 shrink-0 mt-0.5">
+                    warning
+                  </span>
+                  <span>
+                    {changesetBranch?.metadata?.upstreamMovedWarning || upstreamStatus?.warning}
+                  </span>
+                </div>
+              )}
+
+              {/* Fork 409 Conflict Fallback Warning */}
+              {changesetBranch?.metadata?.forkSyncWarning && (
+                <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/35 text-amber-200 text-xs font-mono flex items-start gap-2.5">
+                  <span className="material-symbols-outlined text-[18px] text-amber-300 shrink-0 mt-0.5">
+                    sync_problem
+                  </span>
+                  <span>{changesetBranch.metadata.forkSyncWarning}</span>
+                </div>
+              )}
+
+              {/* GitHub Auth Check */}
+              {!githubConnection?.connected ? (
+                <div className="p-5 rounded-2xl bg-[#1c1e26] border border-[#fbcfe8]/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-xs font-mono font-bold text-white">
+                      Connect your GitHub account
+                    </div>
+                    <p className="text-xs text-[#938f98]">
+                      Required to create a fork/branch in your account and open the pull request.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleConnectGitHub}
+                    disabled={isConnectingGitHub}
+                    className="px-4 py-2 rounded-xl bg-[#fbcfe8] hover:bg-[#f9a8d4] text-[#3d1729] text-xs font-mono font-bold flex items-center gap-2 cursor-pointer disabled:opacity-50 shrink-0"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">link</span>
+                    <span>{isConnectingGitHub ? 'Connecting...' : 'Connect GitHub'}</span>
+                  </button>
+                </div>
+              ) : existingPr ? (
+                /* Created PR Summary Card */
+                <div className="p-5 rounded-2xl bg-gradient-to-r from-[#1b1028]/95 to-[#241335]/95 border border-purple-500/45 space-y-3 shadow-lg">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="px-2 py-0.5 rounded-md bg-purple-500/25 border border-purple-400/40 text-purple-200 text-[10px] font-mono font-bold uppercase">
+                          PR #{existingPr.githubPrNumber} · {existingPr.status}
+                        </span>
+                        {existingPr.isFork && (
+                          <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/30 text-sky-200 text-[10px] font-mono">
+                            Cross-repo from fork
+                          </span>
+                        )}
+                      </div>
+                      <h3 className="text-sm font-heading font-bold text-white">
+                        {existingPr.title}
+                      </h3>
+                      <p className="text-xs font-mono text-purple-200/80">
+                        {existingPr.headOwner && existingPr.isFork
+                          ? `${existingPr.headOwner}:${existingPr.branchName}`
+                          : existingPr.branchName}{' '}
+                        → {existingPr.githubRepoOwner}/{existingPr.githubRepoName}:{existingPr.baseBranch}
+                      </p>
+                    </div>
+                    <a
+                      href={existingPr.githubPrUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-4 py-2.5 rounded-xl bg-purple-500 hover:bg-purple-400 text-black text-xs font-mono font-bold flex items-center justify-center gap-1.5 shrink-0 transition-colors"
+                    >
+                      <span>Open Pull Request</span>
+                      <span className="material-symbols-outlined text-[15px]">open_in_new</span>
+                    </a>
+                  </div>
+                </div>
+              ) : (
+                /* Editable PR Title & Body + One-Click Create PR */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between text-xs font-mono text-[#cac5ce]">
+                    <span>
+                      Connected as <strong className="text-emerald-300">@{githubConnection.githubLogin}</strong>
+                    </span>
+                    {currentChangeset.status === 'rejected' && (
+                      <span className="text-rose-300">
+                        This changeset is rejected. Generate or rethink a new version before creating a PR.
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-mono font-medium text-[#cac5ce] uppercase tracking-wider block">
+                      Pull Request Title
+                    </label>
+                    <input
+                      type="text"
+                      value={activePrTitle}
+                      onChange={(e) =>
+                        setPrTitleDraftByCs((prev) => ({
+                          ...prev,
+                          [currentChangeset.id]: e.target.value,
+                        }))
+                      }
+                      disabled={isCreatingOneClickPr}
+                      className="w-full bg-[#1c1e26] border border-[#48454d]/40 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-mono text-white focus:border-[#fbcfe8]/70 focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-mono font-medium text-[#cac5ce] uppercase tracking-wider block">
+                      Pull Request Description
+                    </label>
+                    <textarea
+                      value={activePrBody}
+                      onChange={(e) =>
+                        setPrBodyDraftByCs((prev) => ({
+                          ...prev,
+                          [currentChangeset.id]: e.target.value,
+                        }))
+                      }
+                      rows={7}
+                      disabled={isCreatingOneClickPr}
+                      className="w-full bg-[#1c1e26] border border-[#48454d]/40 rounded-2xl p-3.5 text-xs font-mono text-white focus:border-[#fbcfe8]/70 focus:outline-none resize-y"
+                    />
+                  </div>
+
+                  {oneClickPrError && (
+                    <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/35 text-rose-200 text-xs font-mono flex items-start gap-2.5">
+                      <span className="material-symbols-outlined text-[18px] text-rose-400 shrink-0 mt-0.5">
+                        error
+                      </span>
+                      <span className="leading-relaxed">{oneClickPrError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-[#48454d]/25">
+                    <span className="text-[11px] font-mono text-[#938f98]">
+                      Automatically branches safely, commits changeset v{currentChangeset.version}, and opens the PR.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleCreateOneClickPr}
+                      disabled={
+                        isCreatingOneClickPr || currentChangeset.status === 'rejected'
+                      }
+                      className="px-5 py-2.5 rounded-xl bg-[#fbcfe8] hover:bg-[#f9a8d4] text-[#3d1729] text-xs font-mono font-bold flex items-center gap-2 cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed shadow-lg shrink-0"
+                    >
+                      {isCreatingOneClickPr ? (
+                        <>
+                          <div className="w-4 h-4 rounded-full border-2 border-[#3d1729] border-t-transparent animate-spin" />
+                          <span>Creating Branch &amp; PR...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="material-symbols-outlined text-[16px]">merge_type</span>
+                          <span>Create Pull Request</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </section>

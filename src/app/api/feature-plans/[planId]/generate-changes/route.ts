@@ -21,10 +21,27 @@ export async function POST(
 
     await requireRepositoryAccess(plan.repositoryId, req);
 
-    const changeset = await CodeGeneratorService.generateCodeChanges(planId, user.id);
+    let feedback: string | undefined;
+    let parentChangesetId: string | undefined;
+    try {
+      const body = await req.json();
+      if (typeof body?.feedback === 'string') {
+        feedback = body.feedback;
+      }
+      if (typeof body?.parentChangesetId === 'string') {
+        parentChangesetId = body.parentChangesetId;
+      }
+    } catch {
+      // Optional body parameters
+    }
+
+    const changeset = await CodeGeneratorService.generateCodeChanges(planId, user.id, {
+      feedback,
+      parentChangesetId,
+    });
 
     return NextResponse.json({ success: true, changeset });
-  } catch (error: any) {
+  } catch (error: unknown) {
     return handleAuthApiError(error);
   }
 }

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS repositories (
   source_type TEXT NOT NULL,
   github_url TEXT,
   branch TEXT DEFAULT 'main',
+  indexed_commit_sha TEXT,
   user_id UUID,
   status TEXT NOT NULL DEFAULT 'PENDING',
   stage TEXT DEFAULT 'Pending',
@@ -29,6 +30,7 @@ CREATE TABLE IF NOT EXISTS repositories (
 );
 
 ALTER TABLE repositories ADD COLUMN IF NOT EXISTS last_opened_at TIMESTAMPTZ;
+ALTER TABLE repositories ADD COLUMN IF NOT EXISTS indexed_commit_sha TEXT;
 CREATE INDEX IF NOT EXISTS idx_repositories_user_id ON repositories(user_id);
 
 -- Repository Files table
@@ -119,6 +121,10 @@ CREATE TABLE IF NOT EXISTS feature_plans (
   issue_url TEXT,
   issue_number INTEGER,
   issue_title TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  parent_plan_id TEXT,
+  root_plan_id TEXT,
+  feedback TEXT,
   plan_json JSONB NOT NULL,
   status TEXT NOT NULL DEFAULT 'COMPLETED',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -128,9 +134,14 @@ CREATE TABLE IF NOT EXISTS feature_plans (
 ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_url TEXT;
 ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_number INTEGER;
 ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS issue_title TEXT;
+ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS parent_plan_id TEXT;
+ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS root_plan_id TEXT;
+ALTER TABLE feature_plans ADD COLUMN IF NOT EXISTS feedback TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_feature_plans_repo_id ON feature_plans(repository_id);
 CREATE INDEX IF NOT EXISTS idx_feature_plans_user_id ON feature_plans(user_id);
+CREATE INDEX IF NOT EXISTS idx_feature_plans_root_id ON feature_plans(root_plan_id);
 
 -- Generated Changesets table (Phase 3 Code Change Generation)
 CREATE TABLE IF NOT EXISTS generated_changesets (
@@ -140,11 +151,14 @@ CREATE TABLE IF NOT EXISTS generated_changesets (
   user_id UUID,
   version INTEGER NOT NULL DEFAULT 1,
   parent_changeset_id TEXT REFERENCES generated_changesets(id) ON DELETE SET NULL,
+  feedback TEXT,
   status TEXT NOT NULL DEFAULT 'ready', -- 'generating' | 'ready' | 'approved' | 'rejected'
   summary TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+ALTER TABLE generated_changesets ADD COLUMN IF NOT EXISTS feedback TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_changesets_plan_id ON generated_changesets(feature_plan_id);
 CREATE INDEX IF NOT EXISTS idx_changesets_repo_id ON generated_changesets(repository_id);
@@ -238,6 +252,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
   github_pr_api_url TEXT,
   branch_name TEXT NOT NULL,
   base_branch TEXT NOT NULL,
+  head_owner TEXT,
   commit_sha TEXT NOT NULL,
   title TEXT NOT NULL,
   body TEXT,
@@ -247,6 +262,8 @@ CREATE TABLE IF NOT EXISTS pull_requests (
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   UNIQUE(changeset_id)
 );
+
+ALTER TABLE pull_requests ADD COLUMN IF NOT EXISTS head_owner TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_pull_requests_changeset_id ON pull_requests(changeset_id);
 CREATE INDEX IF NOT EXISTS idx_pull_requests_repo_id ON pull_requests(repository_id);

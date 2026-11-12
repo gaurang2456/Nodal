@@ -465,4 +465,365 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
 
     assert.strictEqual(response.status, 401);
   });
+
+  // Test 10: Branch safety guards & issue branch naming
+  test('10. Safety Guards & Branch Naming: blocks default/protected branches and uses codegraph/<issue>-<slug>', () => {
+    assert.throws(
+      () => GitHubWriteService.assertSafeTargetBranch('main', 'main'),
+      /default or protected branch/i
+    );
+    assert.throws(
+      () => GitHubWriteService.assertSafeTargetBranch('master', 'trunk'),
+      /default or protected branch/i
+    );
+    assert.throws(
+      () => GitHubWriteService.assertSafeTargetBranch('custom-default', 'custom-default'),
+      /default or protected branch/i
+    );
+    assert.throws(
+      () => GitHubWriteService.assertSafeTargetBranch('codegraph/feature', 'main', true),
+      /default or protected branch/i
+    );
+    assert.throws(
+      () => GitHubWriteService.assertSafeTargetBranch('feature/foo', 'main'),
+      /must be under the 'codegraph\/' namespace/i
+    );
+
+    // Safe codegraph/ branches pass
+    GitHubWriteService.assertSafeTargetBranch('codegraph/42-profile-edit-button', 'main', false);
+
+    // Issue-linked branch naming
+    const issueBranch = GitHubWriteService.buildBranchName({
+      featurePlanId: 'fp-123456',
+      changesetVersion: 1,
+      issueNumber: 42,
+      issueTitle: 'Profile.js: Edit button is non-functional!',
+    });
+    assert.strictEqual(issueBranch, 'codegraph/42-profile-js-edit-button-is-non-functional');
+  });
+
+  // Test 11: Contributor fork-first workflow (branches at upstreamHeadSha before sync, detects upstream moved, cross-repo PR)
+  test('11. Contributor Fork Flow: creates fork, branches before sync, warns if upstream moved, opens cross-repo PR', async () => {
+    if (!process.env.DATABASE_URL) return;
+
+    const forkRepoId = `test-repo-fork-${Date.now()}`;
+    const forkPlanId = `fp-fork-${Date.now()}`;
+    const forkCsId = `cs-fork-${Date.now()}`;
+    const callOrder: string[] = [];
+    let syncCalled = 0;
+    let capturedPrHead = '';
+    let capturedPrOwner = '';
+    let capturedPrBody = '';
+
+    await query(
+      `INSERT INTO repositories (
+        id, name, full_name, source_type, github_url, user_id, status, branch, indexed_commit_sha
+      )
+      VALUES ($1, 'StudyMatePlus', 'upstream-org/StudyMatePlus', 'github', 'https://github.com/upstream-org/StudyMatePlus', $2, 'COMPLETED', 'main', 'indexed-sha-0001')`,
+      [forkRepoId, testUserId]
+    );
+    await query(
+      `INSERT INTO feature_plans (
+        id, repository_id, user_id, feature_request, issue_number, issue_title, plan_json, status
+      )
+      VALUES ($1, $2, $3, 'Profile.js: Edit button is non-functional', 42, 'Profile.js: Edit button is non-functional', '{"overview":"Fix edit button"}'::jsonb, 'COMPLETED')`,
+      [forkPlanId, forkRepoId, testUserId]
+    );
+    await query(
+      `INSERT INTO generated_changesets (
+        id, feature_plan_id, repository_id, user_id, version, status, summary
+      )
+      VALUES ($1, $2, $3, $4, 1, 'ready', 'Wire Profile Edit button click handler')`,
+      [forkCsId, forkPlanId, forkRepoId, testUserId]
+    );
+    await query(
+      `INSERT INTO generated_file_changes (
+        id, changeset_id, file_path, change_type, reason, original_content, proposed_content
+      )
+      VALUES ($1, $2, 'client/src/pages/Profile.js', 'modify', 'Enable edit toggle', 'export const Profile = () => false;', 'export const Profile = () => true;')`,
+      [`fc-fork-${Date.now()}`, forkCsId]
+    );
+
+    const originals = {
+      getRepository: GitHubApiClient.prototype.getRepository,
+      getUser: GitHubApiClient.prototype.getUser,
+      createFork: GitHubApiClient.prototype.createFork,
+      getRef: GitHubApiClient.prototype.getRef,
+      syncForkUpstream: GitHubApiClient.prototype.syncForkUpstream,
+      createRef: GitHubApiClient.prototype.createRef,
+      getFileContent: GitHubApiClient.prototype.getFileContent,
+      getCommit: GitHubApiClient.prototype.getCommit,
+      createBlob: GitHubApiClient.prototype.createBlob,
+      createTree: GitHubApiClient.prototype.createTree,
+      createCommit: GitHubApiClient.prototype.createCommit,
+      updateRef: GitHubApiClient.prototype.updateRef,
+      listPullRequests: GitHubApiClient.prototype.listPullRequests,
+      createPullRequest: GitHubApiClient.prototype.createPullRequest,
+    };
+
+    try {
+      GitHubApiClient.prototype.getRepository = async () => ({
+        id: 555,
+        name: 'StudyMatePlus',
+        full_name: 'upstream-org/StudyMatePlus',
+        private: false,
+        html_url: 'https://github.com/upstream-org/StudyMatePlus',
+        default_branch: 'main',
+        permissions: { admin: false, push: false, pull: true },
+      });
+
+      GitHubApiClient.prototype.getUser = async () => ({
+        id: 99901,
+        login: 'test-dev-user',
+        avatar_url: '',
+        html_url: 'https://github.com/test-dev-user',
+      });
+
+      GitHubApiClient.prototype.createFork = async () => {
+        callOrder.push('createFork');
+        return {
+          id: 777,
+          name: 'StudyMatePlus',
+          full_name: 'test-dev-user/StudyMatePlus',
+          private: false,
+          html_url: 'https://github.com/test-dev-user/StudyMatePlus',
+          default_branch: 'main',
+          fork: true,
+        };
+      };
+
+      GitHubApiClient.prototype.getRef = async (owner, _repo, ref) => {
+        if (owner === 'upstream-org' && ref === 'heads/main') {
+          return { ref: 'refs/heads/main', object: { sha: 'upstream-live-sha-999', type: 'commit' } };
+        }
+        if (owner === 'test-dev-user' && ref === 'heads/main') {
+          return { ref: 'refs/heads/main', object: { sha: 'fork-old-sha-111', type: 'commit' } };
+        }
+        if (owner === 'test-dev-user' && ref.startsWith('heads/codegraph/42-')) {
+          return callOrder.includes('createCommit')
+            ? { ref: `refs/${ref}`, object: { sha: 'new-pr-commit-sha', type: 'commit' } }
+            : callOrder.some((c) => c.startsWith('createRef:'))
+            ? { ref: `refs/${ref}`, object: { sha: 'upstream-live-sha-999', type: 'commit' } }
+            : null;
+        }
+        return null;
+      };
+
+      GitHubApiClient.prototype.createRef = async (_owner, _repo, ref, sha) => {
+        callOrder.push(`createRef:${sha}`);
+        // Succeed immediately on upstreamHeadSha so syncForkUpstream is never needed!
+        return { ref, object: { sha, type: 'commit' } };
+      };
+
+      GitHubApiClient.prototype.syncForkUpstream = async () => {
+        syncCalled++;
+        callOrder.push('syncForkUpstream');
+        return { ok: true, status: 200 };
+      };
+
+      GitHubApiClient.prototype.getFileContent = async () => ({
+        name: 'Profile.js',
+        path: 'client/src/pages/Profile.js',
+        sha: 'file-sha-profile',
+        size: 32,
+        content: Buffer.from('export const Profile = () => false;').toString('base64'),
+        encoding: 'base64',
+      });
+
+      GitHubApiClient.prototype.getCommit = async () => ({
+        sha: 'upstream-live-sha-999',
+        tree: { sha: 'base-tree-sha', url: '' },
+        message: 'upstream tip',
+        parents: [],
+      });
+
+      GitHubApiClient.prototype.createBlob = async () => ({ sha: 'blob-sha-42', url: '' });
+      GitHubApiClient.prototype.createTree = async () => ({ sha: 'tree-sha-42', url: '' });
+      GitHubApiClient.prototype.createCommit = async () => {
+        callOrder.push('createCommit');
+        return {
+          sha: 'new-pr-commit-sha',
+          tree: { sha: 'tree-sha-42', url: '' },
+          message: 'commit',
+          parents: [{ sha: 'upstream-live-sha-999', url: '' }],
+        };
+      };
+      GitHubApiClient.prototype.updateRef = async (_o, _r, ref, sha, force) => {
+        assert.strictEqual(force, false, 'Must never force-push');
+        return { ref, object: { sha, type: 'commit' } };
+      };
+      GitHubApiClient.prototype.listPullRequests = async () => [];
+      GitHubApiClient.prototype.createPullRequest = async (owner, _repo, title, head, base, body) => {
+        capturedPrOwner = owner;
+        capturedPrHead = head;
+        capturedPrBody = body || '';
+        return {
+          id: 88801,
+          number: 77,
+          html_url: `https://github.com/${owner}/StudyMatePlus/pull/77`,
+          url: '',
+          title,
+          body: body || '',
+          state: 'open',
+          head: { ref: head, sha: 'new-pr-commit-sha' },
+          base: { ref: base, sha: 'upstream-live-sha-999' },
+        };
+      };
+
+      const result = await GitHubWriteService.oneClickCreatePullRequest(forkCsId, testUserId, {
+        autoApprove: true,
+      });
+
+      assert.strictEqual(syncCalled, 0, 'Must branch from upstreamHeadSha before calling syncForkUpstream');
+      assert.strictEqual(callOrder[0], 'createFork');
+      assert.ok(callOrder.includes('createRef:upstream-live-sha-999'));
+      assert.strictEqual(result.branch.githubRepoOwner, 'test-dev-user');
+      assert.ok(result.branch.branchName.startsWith('codegraph/42-'));
+      assert.strictEqual(result.branch.metadata?.isFork, true);
+      assert.ok(
+        String(result.branch.metadata?.upstreamMovedWarning || '').includes('moved since indexing'),
+        'Must warn when indexed_commit_sha differs from live upstream HEAD'
+      );
+      assert.strictEqual(capturedPrOwner, 'upstream-org');
+      assert.ok(capturedPrHead.startsWith('test-dev-user:codegraph/42-'));
+      assert.ok(capturedPrBody.includes('Fixes #42'), 'PR body must link issue #42');
+      assert.strictEqual(result.pullRequest.isFork, true);
+      assert.strictEqual(result.pullRequest.headOwner, 'test-dev-user');
+    } finally {
+      Object.assign(GitHubApiClient.prototype, originals);
+      await query(`DELETE FROM repositories WHERE id = $1`, [forkRepoId]);
+    }
+  });
+
+  // Test 12: Graceful fork merge-upstream 409 conflict fallback
+  test('12. Fork Sync 409 Conflict: falls back safely to non-drifted indexed commit SHA or reports actionable conflict', async () => {
+    if (!process.env.DATABASE_URL) return;
+
+    const repo409Id = `test-repo-409-${Date.now()}`;
+    const plan409Id = `fp-409-${Date.now()}`;
+    const cs409Id = `cs-409-${Date.now()}`;
+
+    await query(
+      `INSERT INTO repositories (
+        id, name, full_name, source_type, github_url, user_id, status, branch, indexed_commit_sha
+      )
+      VALUES ($1, 'StudyMatePlus', 'upstream-org/StudyMatePlus', 'github', 'https://github.com/upstream-org/StudyMatePlus', $2, 'COMPLETED', 'main', 'indexed-safe-sha')`,
+      [repo409Id, testUserId]
+    );
+    await query(
+      `INSERT INTO feature_plans (id, repository_id, user_id, feature_request, issue_number, plan_json, status)
+       VALUES ($1, $2, $3, 'Fix Profile', 99, '{}'::jsonb, 'COMPLETED')`,
+      [plan409Id, repo409Id, testUserId]
+    );
+    await query(
+      `INSERT INTO generated_changesets (id, feature_plan_id, repository_id, user_id, version, status, summary)
+       VALUES ($1, $2, $3, $4, 1, 'approved', 'Safe fallback')`,
+      [cs409Id, plan409Id, repo409Id, testUserId]
+    );
+    await query(
+      `INSERT INTO generated_file_changes (id, changeset_id, file_path, change_type, reason, original_content, proposed_content)
+       VALUES ($1, $2, 'src/a.ts', 'modify', 'Update', 'export const a = 1;', 'export const a = 2;')`,
+      [`fc-409-${Date.now()}`, cs409Id]
+    );
+
+    const originals = {
+      getRepository: GitHubApiClient.prototype.getRepository,
+      getUser: GitHubApiClient.prototype.getUser,
+      createFork: GitHubApiClient.prototype.createFork,
+      getRef: GitHubApiClient.prototype.getRef,
+      syncForkUpstream: GitHubApiClient.prototype.syncForkUpstream,
+      createRef: GitHubApiClient.prototype.createRef,
+      getFileContent: GitHubApiClient.prototype.getFileContent,
+      getCommit: GitHubApiClient.prototype.getCommit,
+      createBlob: GitHubApiClient.prototype.createBlob,
+      createTree: GitHubApiClient.prototype.createTree,
+    };
+
+    try {
+      GitHubApiClient.prototype.getRepository = async () => ({
+        id: 556,
+        name: 'StudyMatePlus',
+        full_name: 'upstream-org/StudyMatePlus',
+        private: false,
+        html_url: 'https://github.com/upstream-org/StudyMatePlus',
+        default_branch: 'main',
+        permissions: { admin: false, push: false, pull: true },
+      });
+      GitHubApiClient.prototype.getUser = async () => ({
+        id: 99901,
+        login: 'test-dev-user',
+        avatar_url: '',
+        html_url: 'https://github.com/test-dev-user',
+      });
+      GitHubApiClient.prototype.createFork = async () => ({
+        id: 778,
+        name: 'StudyMatePlus',
+        full_name: 'test-dev-user/StudyMatePlus',
+        private: false,
+        html_url: 'https://github.com/test-dev-user/StudyMatePlus',
+        default_branch: 'main',
+        fork: true,
+      });
+      GitHubApiClient.prototype.getRef = async (owner, _repo, ref) => {
+        if (owner === 'upstream-org' && ref === 'heads/main') {
+          return { ref: 'refs/heads/main', object: { sha: 'upstream-tip-missing-in-fork', type: 'commit' } };
+        }
+        if (owner === 'test-dev-user' && ref === 'heads/main') {
+          return { ref: 'refs/heads/main', object: { sha: 'fork-diverged-sha', type: 'commit' } };
+        }
+        return null;
+      };
+      GitHubApiClient.prototype.createRef = async (_owner, _repo, ref, sha) => {
+        // First attempt at upstreamHeadSha fails (422 commit missing on fork)
+        if (sha === 'upstream-tip-missing-in-fork') {
+          throw new Error('GitHub API request failed [422]: Reference cannot be created');
+        }
+        return { ref, object: { sha, type: 'commit' } };
+      };
+      GitHubApiClient.prototype.syncForkUpstream = async () => ({
+        ok: false,
+        status: 409,
+        message: 'Merge conflict on unrelated README.md',
+      });
+      GitHubApiClient.prototype.getFileContent = async () => ({
+        name: 'a.ts',
+        path: 'src/a.ts',
+        sha: 'file-sha-a',
+        size: 18,
+        content: Buffer.from('export const a = 1;').toString('base64'),
+        encoding: 'base64',
+      });
+      GitHubApiClient.prototype.getCommit = async () => ({
+        sha: 'indexed-safe-sha',
+        tree: { sha: 'tree-indexed-safe', url: '' },
+        message: 'indexed commit',
+        parents: [],
+      });
+      GitHubApiClient.prototype.createBlob = async () => ({ sha: 'blob-409', url: '' });
+      GitHubApiClient.prototype.createTree = async () => ({ sha: 'tree-409', url: '' });
+
+      const branch = await GitHubWriteService.createBranchAndStageChangeset(cs409Id, testUserId);
+      assert.strictEqual(branch.baseSha, 'indexed-safe-sha');
+      assert.strictEqual(branch.metadata?.forkSyncStatus, 'conflict_fallback');
+      assert.ok(String(branch.metadata?.forkSyncWarning || '').includes('409 Conflict'));
+
+      // Now simulate drifted target file too -> must throw actionable 409 Fork sync conflict error
+      GitHubApiClient.prototype.getFileContent = async () => ({
+        name: 'a.ts',
+        path: 'src/a.ts',
+        sha: 'file-sha-drifted',
+        size: 25,
+        content: Buffer.from('export const a = 999; // conflicted').toString('base64'),
+        encoding: 'base64',
+      });
+
+      await assert.rejects(
+        () => GitHubWriteService.createBranchAndStageChangeset(cs409Id, testUserId),
+        /Fork sync conflict \(409\)/i
+      );
+    } finally {
+      Object.assign(GitHubApiClient.prototype, originals);
+      await query(`DELETE FROM repositories WHERE id = $1`, [repo409Id]);
+    }
+  });
 });

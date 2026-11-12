@@ -4,11 +4,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   GeneratedChangeset,
   GeneratedFileChange,
-  ValidationResult,
-  ValidationStatus,
-  GitHubConnectionStatus,
-  ChangesetBranch,
-  PullRequestRecord,
 } from '@/types';
 import { computeLineDiff, calculateDiffStats, DiffLine } from '@/server/planner/diffUtils';
 import { createClient } from '@/lib/supabase/client';
@@ -103,8 +98,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       } else {
         setPrError(data.error || 'Failed to create Pull Request.');
       }
-    } catch (err: any) {
-      setPrError(err.message || 'Network error while creating Pull Request.');
+    } catch (err: unknown) {
+      setPrError(err instanceof Error ? err.message : 'Network error while creating Pull Request.');
     } finally {
       setIsCreatingPr(false);
     }
@@ -124,8 +119,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       } else {
         setBranchError(data.error || 'Failed to create GitHub branch.');
       }
-    } catch (err: any) {
-      setBranchError(err.message || 'Network error while creating branch.');
+    } catch (err: unknown) {
+      setBranchError(err instanceof Error ? err.message : 'Network error while creating branch.');
     } finally {
       setIsCreatingBranch(false);
     }
@@ -145,8 +140,8 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
       } else {
         setCommitError(data.error || 'Failed to commit and push changes.');
       }
-    } catch (err: any) {
-      setCommitError(err.message || 'Network error while committing to branch.');
+    } catch (err: unknown) {
+      setCommitError(err instanceof Error ? err.message : 'Network error while committing to branch.');
     } finally {
       setIsCommitting(false);
     }
@@ -317,6 +312,11 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             {statusBadge()}
           </div>
           <p className="text-xs text-[#cac5ce] font-sans pl-11">{changeset.summary}</p>
+          {changeset.feedback && (
+            <p className="text-[11px] text-[#fbcfe8]/90 font-mono pl-11">
+              Feedback applied: &ldquo;{changeset.feedback}&rdquo;
+            </p>
+          )}
         </div>
 
         {/* Action Controls */}
@@ -734,7 +734,16 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-white font-bold">{changesetBranch.branchName}</span>
+                <span className="text-white font-bold">
+                  {changesetBranch.metadata?.isFork
+                    ? `${changesetBranch.githubRepoOwner}:${changesetBranch.branchName}`
+                    : changesetBranch.branchName}
+                </span>
+                {changesetBranch.metadata?.isFork && (
+                  <span className="px-2 py-0.5 rounded-md bg-sky-500/20 text-[9px] font-bold uppercase tracking-wider border border-sky-400/30 text-sky-300">
+                    Fork
+                  </span>
+                )}
                 {changesetBranch.commitSha ? (
                   <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-[9px] font-bold uppercase tracking-wider border border-emerald-400/30 text-emerald-300">
                     Committed ({changesetBranch.commitSha.slice(0, 7)})
@@ -824,7 +833,13 @@ export const DiffViewer: React.FC<DiffViewerProps> = ({
                 </span>
               </div>
               <div className="text-[11px] text-purple-300/80">
-                Merging <span className="font-semibold text-white">{pullRequest.branchName}</span> into <span className="font-semibold text-white">{pullRequest.baseBranch}</span> • Commit: {pullRequest.commitSha.slice(0, 7)}
+                Merging{' '}
+                <span className="font-semibold text-white">
+                  {pullRequest.headOwner && pullRequest.isFork
+                    ? `${pullRequest.headOwner}:${pullRequest.branchName}`
+                    : pullRequest.branchName}
+                </span>{' '}
+                into <span className="font-semibold text-white">{pullRequest.baseBranch}</span> • Commit: {pullRequest.commitSha.slice(0, 7)}
               </div>
             </div>
           </div>

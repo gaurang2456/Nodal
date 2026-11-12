@@ -124,6 +124,7 @@ export interface Repository {
   folderCount: number;
   estimatedTokens: number;
   branch: string;
+  indexedCommitSha?: string | null;
   userId?: string;
   commitCount?: number;
   status: 'PENDING' | 'DOWNLOADING' | 'EXTRACTING' | 'SCANNING' | 'PARSING' | 'CHUNKING' | 'EMBEDDING' | 'COMPLETED' | 'FAILED' | 'indexed' | 'indexing' | 'error';
@@ -268,6 +269,10 @@ export interface FeaturePlanRecord {
   issueUrl?: string | null;
   issueNumber?: number | null;
   issueTitle?: string | null;
+  version?: number;
+  parentPlanId?: string | null;
+  rootPlanId?: string | null;
+  feedback?: string | null;
   planJson: FeaturePlanData;
   status: string;
   createdAt: string;
@@ -308,6 +313,7 @@ export interface GeneratedChangeset {
   userId?: string;
   version: number;
   parentChangesetId?: string | null;
+  feedback?: string | null;
   status: ChangesetStatus;
   summary: string;
   changes: GeneratedFileChange[];
@@ -401,6 +407,8 @@ export interface PullRequestRecord {
   githubPrApiUrl?: string;
   branchName: string;
   baseBranch: string;
+  headOwner?: string | null;
+  isFork?: boolean;
   commitSha: string;
   title: string;
   body?: string;

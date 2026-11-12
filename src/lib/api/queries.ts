@@ -13,38 +13,41 @@ import {
 } from '@/types';
 import { GraphApiResponse } from '@/components/graph/graphUtils';
 
-export function mapBackendRepoToRepository(r: any): Repository {
+export function mapBackendRepoToRepository(r: Record<string, unknown>): Repository {
   return {
-    id: r.id,
-    name: r.name,
-    fullName: r.full_name,
-    sourceType: r.source_type,
-    url: r.github_url,
-    primaryLanguage: r.primary_language || 'Code',
-    framework: r.framework || 'Standard',
-    fileCount: r.file_count || 0,
-    folderCount: r.folder_count || 0,
-    estimatedTokens: r.token_count || 0,
-    branch: r.branch || 'main',
-    status: r.status,
-    stage: r.stage,
-    progress: r.progress,
-    lastIndexedAt: new Date(r.updated_at || r.created_at).toLocaleDateString(),
-    createdAt: r.created_at || undefined,
-    lastOpenedAt: r.last_opened_at || null,
-    stats: r.stats,
-    technologies: r.technologies || [],
-    summary: r.summary || {
+    id: r.id as string,
+    name: r.name as string,
+    fullName: r.full_name as string,
+    sourceType: r.source_type as 'github' | 'zip',
+    url: (r.github_url as string | undefined) || undefined,
+    primaryLanguage: (r.primary_language as string) || 'Code',
+    framework: (r.framework as string) || 'Standard',
+    fileCount: (r.file_count as number) || 0,
+    folderCount: (r.folder_count as number) || 0,
+    estimatedTokens: (r.token_count as number) || 0,
+    branch: (r.branch as string) || 'main',
+    indexedCommitSha: (r.indexed_commit_sha as string | null) || null,
+    status: r.status as Repository['status'],
+    stage: r.stage as string | undefined,
+    progress: r.progress as number | undefined,
+    lastIndexedAt: new Date(
+      String(r.updated_at || r.created_at || Date.now())
+    ).toLocaleDateString(),
+    createdAt: (r.created_at as string | undefined) || undefined,
+    lastOpenedAt: (r.last_opened_at as string | null) || null,
+    stats: r.stats as Repository['stats'],
+    technologies: (r.technologies as Repository['technologies']) || [],
+    summary: (r.summary as Repository['summary']) || {
       projectType: 'Repository',
       architecture: 'Modular',
       backend: 'Standard',
       frontend: 'N/A',
       database: 'N/A',
       authentication: 'Standard',
-      description: `Repository ${r.name}`,
+      description: `Repository ${String(r.name || '')}`,
       keyPackages: [],
     },
-    errorMessage: r.error_message,
+    errorMessage: r.error_message as string | undefined,
   };
 }
 
@@ -146,7 +149,10 @@ export const ARCHITECTURE_KEYS = {
  * Fetches and caches the architecture flow for a repository.
  * Stale time: 5 minutes.
  */
-export function useArchitecture(repoId: string | null | undefined, initialData?: any) {
+export function useArchitecture(
+  repoId: string | null | undefined,
+  initialData?: ArchitectureFlow
+) {
   return useQuery<ArchitectureFlow>({
     queryKey: repoId ? ARCHITECTURE_KEYS.detail(repoId) : (['architecture', 'null'] as const),
     queryFn: async () => {
@@ -525,6 +531,38 @@ export async function fetchRepositoryGitHubIssue(
     throw new Error(data.error || 'Failed to fetch GitHub issue.');
   }
   return data.issue as GitHubIssueFetchResult;
+}
+
+export interface RepositoryUpstreamStatus {
+  isGitHub: boolean;
+  upstreamOwner?: string;
+  upstreamRepo?: string;
+  branch?: string;
+  indexedCommitSha: string | null;
+  liveHeadSha: string | null;
+  upstreamMoved: boolean;
+  hasPushAccess?: boolean | null;
+  warning?: string | null;
+}
+
+export function useUpstreamStatus(repoId: string | null | undefined, enabled: boolean) {
+  return useQuery<RepositoryUpstreamStatus>({
+    queryKey: ['upstream-status', repoId || 'null'],
+    queryFn: async () => {
+      const res = await fetch(`/api/repositories/${encodeURIComponent(repoId!)}/upstream-status`);
+      if (!res.ok) {
+        return {
+          isGitHub: false,
+          indexedCommitSha: null,
+          liveHeadSha: null,
+          upstreamMoved: false,
+        };
+      }
+      return res.json();
+    },
+    enabled: Boolean(repoId && enabled),
+    staleTime: 30 * 1000,
+  });
 }
 
 

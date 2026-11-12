@@ -307,9 +307,15 @@ export class GitHubApiClient {
 
         // Clean out any accidental token reflections
         const sanitizedDetails = errorDetails.replace(new RegExp(this.token, 'g'), '[REDACTED_TOKEN]');
-        throw new Error(
-          `GitHub API request failed [${response.status}]: ${sanitizedDetails || response.statusText}`
+        const scopeHint =
+          response.status === 403
+            ? " Your connected GitHub account may lack required repository permissions or 'repo' / 'public_repo' OAuth scope."
+            : '';
+        const apiErr = new Error(
+          `GitHub API request failed [${response.status}]: ${sanitizedDetails || response.statusText}${scopeHint}`
         );
+        (apiErr as any).status = response.status;
+        throw apiErr;
       }
 
       if (response.status === 204) {
@@ -322,7 +328,11 @@ export class GitHubApiClient {
         new RegExp(this.token, 'g'),
         '[REDACTED_TOKEN]'
       );
-      throw new Error(safeMessage);
+      const wrapped = new Error(safeMessage);
+      if (typeof err?.status === 'number') {
+        (wrapped as any).status = err.status;
+      }
+      throw wrapped;
     }
   }
 
@@ -543,6 +553,89 @@ export class GitHubApiClient {
     return this.request<GitHubPullRequestDetails[]>(
       `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls?${params.toString()}`
     );
+  }
+
+  /**
+   * Creates or returns an existing fork of upstream owner/repo under the authenticated user's account.
+   */
+  async createFork(owner: string, repo: string): Promise<GitHubRepoDetails> {
+    return this.request<GitHubRepoDetails>(
+      `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/forks`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ default_branch_only: true }),
+      }
+    );
+  }
+
+  /**
+   * Syncs a fork's branch with the upstream repository using POST /repos/{owner}/{repo}/merge-upstream.
+   * Returns HTTP status explicitly so 409 conflicts can be handled gracefully without crashing.
+   */
+  async syncForkUpstream(
+    owner: string,
+    repo: string,
+    branch: string
+  ): Promise<{ ok: boolean; status: number; message?: string; mergeType?: string }> {
+    const url = `${this.baseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/merge-upstream`;
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          Accept: 'application/vnd.github+json',
+          'User-Agent': 'CodeGraph-Platform/1.0',
+          'X-GitHub-Api-Version': '2022-11-28',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ branch }),
+      });
+
+      let payload: any = {};
+      try {
+        payload = await response.json();
+      } catch {
+        // Ignore non-JSON body
+      }
+
+      const rawMessage = typeof payload?.message === 'string' ? payload.message : response.statusText;
+      const safeMessage = rawMessage.replace(new RegExp(this.token, 'g'), '[REDACTED_TOKEN]');
+
+      return {
+        ok: response.ok,
+        status: response.status,
+        message: safeMessage,
+        mergeType: payload?.merge_type,
+      };
+    } catch (err: any) {
+      const safeMessage = (err?.message || 'Failed to sync fork with upstream').replace(
+        new RegExp(this.token, 'g'),
+        '[REDACTED_TOKEN]'
+      );
+      return {
+        ok: false,
+        status: 500,
+        message: safeMessage,
+      };
+    }
+  }
+
+  /**
+   * Checks branch metadata (such as whether the branch is protected).
+   * Returns null gracefully if inaccessible or not found.
+   */
+  async getBranchInfo(
+    owner: string,
+    repo: string,
+    branch: string
+  ): Promise<{ name: string; protected?: boolean } | null> {
+    try {
+      return await this.request<{ name: string; protected?: boolean }>(
+        `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/branches/${encodeURIComponent(branch)}`
+      );
+    } catch {
+      return null;
+    }
   }
 }
 

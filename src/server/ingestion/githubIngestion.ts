@@ -8,6 +8,49 @@ export interface GitHubRepoInfo {
   fullName: string;
   defaultBranch: string;
   htmlUrl: string;
+  commitSha?: string;
+}
+
+async function resolveBranchHeadCommitSha(
+  owner: string,
+  repo: string,
+  branch: string
+): Promise<string | undefined> {
+  const headers = {
+    'User-Agent': 'CodeGraph-Ingestion-Engine/1.0',
+    Accept: 'application/vnd.github.v3+json',
+  };
+  try {
+    const refRes = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/ref/heads/${encodeURIComponent(branch)}`,
+      { headers, signal: AbortSignal.timeout(5000) }
+    );
+    if (refRes.ok) {
+      const refData = await refRes.json();
+      if (typeof refData?.object?.sha === 'string' && refData.object.sha) {
+        return refData.object.sha;
+      }
+    }
+  } catch {
+    // Fallback to commits endpoint below
+  }
+
+  try {
+    const commitRes = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/commits/${encodeURIComponent(branch)}`,
+      { headers, signal: AbortSignal.timeout(5000) }
+    );
+    if (commitRes.ok) {
+      const commitData = await commitRes.json();
+      if (typeof commitData?.sha === 'string' && commitData.sha) {
+        return commitData.sha;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  return undefined;
 }
 
 /**
@@ -152,6 +195,7 @@ export async function downloadGitHubRepository(
           }
 
           if (extractedFiles.length > 0) {
+            info.commitSha = await resolveBranchHeadCommitSha(info.owner, info.repo, branch);
             console.log(`⚡ Fast Ingestion: Retrieved ${extractedFiles.length} clean source files for ${info.fullName} (skipped node_modules/binaries).`);
             return {
               info,
@@ -211,6 +255,8 @@ export async function downloadGitHubRepository(
       `Repository '${info.fullName}' was downloaded successfully but contained 0 indexable source files.`
     );
   }
+
+  info.commitSha = await resolveBranchHeadCommitSha(info.owner, info.repo, info.defaultBranch);
 
   return {
     info,
