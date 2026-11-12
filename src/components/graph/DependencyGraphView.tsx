@@ -70,7 +70,7 @@ const DEFAULT_HIERARCHY: GraphHierarchyState = {
   viewLevel: 'purpose',
 };
 
-function InnerCodeGraphView({
+function InnerNodalGraphView({
   repo,
   onSelectFile,
   onAskAi,
@@ -564,7 +564,7 @@ function InnerCodeGraphView({
 export const DependencyGraphView: React.FC<DependencyGraphViewProps> = (props) => {
   return (
     <ReactFlowProvider>
-      <InnerCodeGraphView {...props} />
+      <InnerNodalGraphView {...props} />
     </ReactFlowProvider>
   );
 };

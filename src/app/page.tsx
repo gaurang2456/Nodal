@@ -77,7 +77,7 @@ function WorkspaceShellFallback() {
   );
 }
 
-function CodeGraphWorkspace() {
+function NodalWorkspace() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
@@ -687,7 +687,7 @@ function CodeGraphWorkspace() {
                   <div className="p-4 rounded-xl bg-[#1a1b1e] border border-[#48454d]/25 space-y-3">
                     <span className="font-semibold text-xs text-[#e3e2e6] block">Database &amp; Vector Storage</span>
                     <p className="text-xs text-[#938f98]">
-                      Connected to PostgreSQL + pgvector at <span className="font-mono text-[#fbcfe8]">localhost:5432/codegraph</span>
+                      Connected to PostgreSQL + <span className="font-mono text-[#fbcfe8]">pgvector</span> vector store
                     </p>
                     <div className="pt-2">
                       <span className="text-[11px] font-mono text-[#b7c8e1] bg-[#121316] px-2.5 py-1 rounded border border-[#48454d]/20 inline-block">
@@ -737,7 +737,7 @@ function CodeGraphWorkspace() {
 export default function Home() {
   return (
     <Suspense fallback={<WorkspaceShellFallback />}>
-      <CodeGraphWorkspace />
+      <NodalWorkspace />
     </Suspense>
   );
 }

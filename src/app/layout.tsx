@@ -22,9 +22,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'CodeGraph - AI Architecture & Codebase Assistant',
+  title: 'Nodal - AI Architecture & Codebase Assistant',
   description: 'Instant codebase understanding, interactive dependency graphs, file explorer, and AI architectural assistant with RAG.',
-  keywords: ['RAG', 'Repository Analysis', 'AI Code Chat', 'Code Graph', 'Dependency Graph', 'Developer Tools'],
+  keywords: ['Nodal', 'RAG', 'Repository Analysis', 'AI Code Chat', 'Code Graph', 'Dependency Graph', 'Developer Tools'],
 };
 
 export default function RootLayout({

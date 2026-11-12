@@ -36,7 +36,7 @@ describe('Phase 4.3: GitHub Pull Request Creation & Idempotency Tests', () => {
   const testChangesetId = `cs-43-approved-${Date.now()}`;
   const unapprovedChangesetId = `cs-43-ready-${Date.now()}`;
   const uncommittedChangesetId = `cs-43-uncommitted-${Date.now()}`;
-  const branchName = `codegraph/feature-plan-test43-v1`;
+  const branchName = `nodal/feature-plan-test43-v1`;
   const commitSha = 'commit-sha-pr-test-1234567890';
   const baseSha = 'base-sha-pr-test-0987654321';
 
@@ -124,7 +124,7 @@ describe('Phase 4.3: GitHub Pull Request Creation & Idempotency Tests', () => {
           changeset_id, repository_id, user_id, github_repo_owner, github_repo_name,
           branch_name, base_branch, base_sha, status, file_count
         )
-        VALUES ($1, $2, $3, 'testowner', 'testprrepo', 'codegraph/feature-plan-uncommitted-v3', 'main', $4, 'staged', 1)`,
+        VALUES ($1, $2, $3, 'testowner', 'testprrepo', 'nodal/feature-plan-uncommitted-v3', 'main', $4, 'staged', 1)`,
         [uncommittedChangesetId, testRepoId, testUserId, baseSha]
       );
     }
@@ -214,7 +214,7 @@ describe('Phase 4.3: GitHub Pull Request Creation & Idempotency Tests', () => {
       await GitHubWriteService.createPullRequestForChangeset(testChangesetId, testUserId);
       assert.fail('Should have aborted due to branch head mismatch');
     } catch (err: any) {
-      assert.ok(err.message.includes('does not match the CodeGraph commit'));
+      assert.ok(err.message.includes('does not match the Nodal commit'));
     } finally {
       GitHubApiClient.prototype.getRef = originalGetRef;
     }
@@ -279,10 +279,13 @@ describe('Phase 4.3: GitHub Pull Request Creation & Idempotency Tests', () => {
       assert.notStrictEqual(prHead, 'main'); // Head is NEVER default branch
 
       // Verify deterministic title and body
-      assert.ok(prTitle.includes('[CodeGraph]'));
+      assert.ok(prTitle.includes('[Nodal]'));
       assert.ok(prBody.includes('## Summary'));
       assert.ok(prBody.includes('## Changes'));
       assert.ok(prBody.includes('## Validation Summary'));
+      assert.ok(prBody.includes('*Generated with Nodal •'));
+      assert.ok(!prBody.includes('[CodeGraph](https://github.com/)'));
+      assert.ok(!prBody.includes('[Nodal](https://github.com/)'));
 
       // Verify persistence in pull_requests table
       const stored = await GitHubWriteService.getPullRequestForChangeset(testChangesetId, testUserId);
@@ -330,7 +333,7 @@ describe('Phase 4.3: GitHub Pull Request Creation & Idempotency Tests', () => {
 
     // Create a fresh approved and committed changeset
     const freshCsId = `cs-43-upstream-pr-${Date.now()}`;
-    const freshBranch = `codegraph/feature-plan-upstream-v1`;
+    const freshBranch = `nodal/feature-plan-upstream-v1`;
 
     await query(
       `INSERT INTO generated_changesets (id, feature_plan_id, repository_id, user_id, version, status, summary)
@@ -371,7 +374,7 @@ describe('Phase 4.3: GitHub Pull Request Creation & Idempotency Tests', () => {
           number: 202,
           html_url: 'https://github.com/testowner/testprrepo/pull/202',
           url: 'https://api.github.com/repos/testowner/testprrepo/pulls/202',
-          title: '[CodeGraph] Upstream PR test',
+          title: '[Nodal] Upstream PR test',
           body: 'Already created',
           state: 'open',
           head: { ref: freshBranch, sha: commitSha },

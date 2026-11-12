@@ -173,7 +173,7 @@ export async function fetchGitHubIssue(
   const endpoint = `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/issues/${issueNumber}`;
   const headers: Record<string, string> = {
     Accept: 'application/vnd.github+json',
-    'User-Agent': 'CodeGraph-Platform/1.0',
+    'User-Agent': 'Nodal-Platform/1.0',
     'X-GitHub-Api-Version': '2022-11-28',
   };
 
@@ -281,7 +281,7 @@ export class GitHubApiClient {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
       Accept: 'application/vnd.github+json',
-      'User-Agent': 'CodeGraph-Platform/1.0',
+      'User-Agent': 'Nodal-Platform/1.0',
       'X-GitHub-Api-Version': '2022-11-28',
       ...(options.headers as Record<string, string> || {}),
     };
@@ -584,7 +584,7 @@ export class GitHubApiClient {
         headers: {
           Authorization: `Bearer ${this.token}`,
           Accept: 'application/vnd.github+json',
-          'User-Agent': 'CodeGraph-Platform/1.0',
+          'User-Agent': 'Nodal-Platform/1.0',
           'X-GitHub-Api-Version': '2022-11-28',
           'Content-Type': 'application/json',
         },
@@ -640,7 +640,7 @@ export class GitHubApiClient {
 }
 
 /**
- * Factory to create an authenticated GitHubApiClient for the given CodeGraph user.
+ * Factory to create an authenticated GitHubApiClient for the given Nodal user.
  * Strictly verifies the user has a GitHub connection before instantiating the client.
  */
 export async function createGitHubClient(userId: string): Promise<GitHubApiClient> {

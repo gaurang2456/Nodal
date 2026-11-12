@@ -1,5 +1,5 @@
 -- ==============================================================================
--- CodeGraph: Supabase PostgreSQL + pgvector Schema
+-- Nodal: Supabase PostgreSQL + pgvector Schema
 -- ==============================================================================
 
 -- 1. Enable the pgvector extension for AI code embeddings

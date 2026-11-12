@@ -164,7 +164,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({
               <div className="space-y-2.5">
                 <div className="flex items-center gap-1.5 text-[10px] font-mono text-[#fbcfe8] uppercase tracking-wider">
                   <span className="material-symbols-outlined text-[14px]">terminal</span>
-                  <span>CodeGraph AI</span>
+                  <span>Nodal AI</span>
                 </div>
 
                 <div className="text-xs text-[#e3e2e6] leading-relaxed bg-[#111316]/50 p-2.5 rounded-xl border border-[#48454d]/15 whitespace-pre-wrap">

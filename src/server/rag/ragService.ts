@@ -528,7 +528,7 @@ export class RagService {
       )
       .join('\n\n');
 
-    const prompt = `You are CodeGraph AI, an expert codebase and architecture intelligence assistant.
+    const prompt = `You are Nodal AI, an expert codebase and architecture intelligence assistant.
 Answer the following question about the indexed repository based on the provided code chunks.
 
 --- RETRIEVED REPOSITORY CONTEXT ---
@@ -588,7 +588,7 @@ ${userQuery}
           messages: [
             {
               role: 'system',
-              content: 'You are CodeGraph AI, an expert codebase assistant. Answer accurately with verified citations.',
+              content: 'You are Nodal AI, an expert codebase assistant. Answer accurately with verified citations.',
             },
             { role: 'user', content: prompt },
           ],

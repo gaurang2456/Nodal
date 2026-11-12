@@ -7,7 +7,7 @@ import { GitHubWriteService } from '@/server/github/githubWriteService';
 /**
  * POST /api/changesets/[changesetId]/github/pr
  * Creates a GitHub Pull Request targeting the repository's default branch
- * from the committed CodeGraph feature branch, and persists PR metadata.
+ * from the committed Nodal feature branch, and persists PR metadata.
  */
 export async function POST(
   req: NextRequest,

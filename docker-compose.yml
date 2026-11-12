@@ -1,13 +1,13 @@
 # ==============================================================================
-# CodeGraph: Local PostgreSQL + pgvector Fallback
-# Note: CodeGraph uses Supabase PostgreSQL by default. This Docker setup is
+# Nodal: Local PostgreSQL + pgvector Fallback
+# Note: Nodal uses Supabase PostgreSQL by default. This Docker setup is
 # provided only as an optional offline development fallback.
 # ==============================================================================
 
 services:
   postgres:
     image: pgvector/pgvector:pg16
-    container_name: codegraph-postgres
+    container_name: nodal-postgres
     restart: always
     environment:
       POSTGRES_DB: codegraph

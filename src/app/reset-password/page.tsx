@@ -109,7 +109,7 @@ export default function ResetPasswordPage() {
           <p className="text-xs text-[#938f98] leading-relaxed">
             {success
               ? 'Your password has been changed successfully. You can now use your new password.'
-              : 'Please enter a strong new password for your CodeGraph account.'}
+              : 'Please enter a strong new password for your Nodal account.'}
           </p>
         </div>
 
@@ -172,7 +172,7 @@ export default function ResetPasswordPage() {
                 onClick={() => router.push('/')}
                 className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#70485c] to-[#49273c] hover:from-[#82546c] hover:to-[#573047] border border-[#fbcfe8]/40 text-white text-xs font-mono font-bold transition-all shadow-lg hover:shadow-[#fbcfe8]/20 flex items-center justify-center gap-2 cursor-pointer"
               >
-                <span>Continue to CodeGraph</span>
+                <span>Continue to Nodal</span>
                 <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
               </button>
 

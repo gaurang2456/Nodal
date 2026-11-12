@@ -1,7 +1,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import { TypeScriptAnalyzer } from '../analyzer/analyzers/typeScriptAnalyzer';
-import { CodeGraphEngine } from '../analyzer/codeGraphEngine';
+import { NodalEngine } from '../analyzer/nodalEngine';
 import { GraphStorage } from '../analyzer/graphStorage';
 import { RepositoryFile } from '../analyzer/types';
 
@@ -285,7 +285,7 @@ export class UserController {
       { filePath: 'src/users/user.controller.ts', content: controllerCode },
     ];
 
-    const result = await CodeGraphEngine.analyze('repo-3tier-test', files);
+    const result = await NodalEngine.analyze('repo-3tier-test', files);
 
     assert.strictEqual(result.errors.length, 0, 'Should parse without errors');
 
@@ -341,7 +341,7 @@ export class UserController {
       content: `export class GoodTwo { run() { return 2; } }`,
     };
 
-    const result = await CodeGraphEngine.analyze('repo-resilience-test', [validFile1, brokenFile, validFile2]);
+    const result = await NodalEngine.analyze('repo-resilience-test', [validFile1, brokenFile, validFile2]);
 
     // Symbols from good files must be present
     const names = result.symbols.map((s) => s.name);
@@ -358,8 +358,8 @@ export class UserController {
       { filePath: 'src/service.ts', content: 'export class RepoBService { doWork() {} }' },
     ];
 
-    const resultA = await CodeGraphEngine.analyze('repo-A', filesRepoA);
-    const resultB = await CodeGraphEngine.analyze('repo-B', filesRepoB);
+    const resultA = await NodalEngine.analyze('repo-A', filesRepoA);
+    const resultB = await NodalEngine.analyze('repo-B', filesRepoB);
 
     // Repo A symbols must all start with repo-A
     for (const sym of resultA.symbols) {

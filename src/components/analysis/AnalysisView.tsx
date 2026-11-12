@@ -639,7 +639,7 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
   };
 
   const predictedBranchName = useMemo(() => {
-    if (!currentPlan || !currentChangeset) return 'codegraph/feature';
+    if (!currentPlan || !currentChangeset) return 'nodal/feature';
     if (changesetBranch?.branchName) return changesetBranch.branchName;
     if (currentPlan.issueNumber) {
       const sourceText = currentPlan.issueTitle || currentPlan.featureRequest || 'fix';
@@ -649,16 +649,16 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
         .replace(/^-+|-+$/g, '')
         .slice(0, 40)
         .replace(/-+$/g, '');
-      return `codegraph/${currentPlan.issueNumber}-${slug || 'fix'}`;
+      return `nodal/${currentPlan.issueNumber}-${slug || 'fix'}`;
     }
     const cleanId = currentPlan.id.replace(/^fp-/, '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 16);
-    return `codegraph/feature-plan-${cleanId}-v${currentChangeset.version}`.toLowerCase();
+    return `nodal/feature-plan-${cleanId}-v${currentChangeset.version}`.toLowerCase();
   }, [currentPlan, currentChangeset, changesetBranch?.branchName]);
 
   const defaultPrTitle = useMemo(() => {
     if (!currentPlan || !currentChangeset) return '';
     const seed = currentPlan.issueTitle || currentPlan.featureRequest || currentChangeset.summary;
-    return `[CodeGraph] ${seed.slice(0, 80)}`;
+    return `[Nodal] ${seed.slice(0, 80)}`;
   }, [currentPlan, currentChangeset]);
 
   const defaultPrBody = useMemo(() => {
@@ -1773,10 +1773,10 @@ export const AnalysisView: React.FC<AnalysisViewProps> = ({
 
                 <p className="text-[11px] text-[#938f98] leading-relaxed">
                   {upstreamStatus?.hasPushAccess === false
-                    ? 'You do not have direct write access to this upstream repository. CodeGraph will fork (or reuse your fork), branch cleanly from upstream, commit your approved changes, and open a cross-repo PR.'
+                    ? 'You do not have direct write access to this upstream repository. Nodal will fork (or reuse your fork), branch cleanly from upstream, commit your approved changes, and open a cross-repo PR.'
                     : upstreamStatus?.hasPushAccess === true
-                    ? 'You have write access to this repository. CodeGraph will create a dedicated branch (never modifying the default branch), commit, and open a PR.'
-                    : 'CodeGraph never pushes to the default branch. Based on your GitHub permissions, it either branches directly or automatically forks into your account and opens a cross-repo PR.'}
+                    ? 'You have write access to this repository. Nodal will create a dedicated branch (never modifying the default branch), commit, and open a PR.'
+                    : 'Nodal never pushes to the default branch. Based on your GitHub permissions, it either branches directly or automatically forks into your account and opens a cross-repo PR.'}
                 </p>
               </div>
 

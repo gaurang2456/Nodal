@@ -17,7 +17,7 @@ async function resolveBranchHeadCommitSha(
   branch: string
 ): Promise<string | undefined> {
   const headers = {
-    'User-Agent': 'CodeGraph-Ingestion-Engine/1.0',
+    'User-Agent': 'Nodal-Ingestion-Engine/1.0',
     Accept: 'application/vnd.github.v3+json',
   };
   try {
@@ -96,7 +96,7 @@ export async function downloadGitHubRepository(
   try {
     const metaRes = await fetch(`https://api.github.com/repos/${info.owner}/${info.repo}`, {
       headers: {
-        'User-Agent': 'CodeGraph-Ingestion-Engine/1.0',
+        'User-Agent': 'Nodal-Ingestion-Engine/1.0',
         Accept: 'application/vnd.github.v3+json',
       },
       signal: AbortSignal.timeout(6000),
@@ -117,7 +117,7 @@ export async function downloadGitHubRepository(
         `https://api.github.com/repos/${info.owner}/${info.repo}/git/trees/${branch}?recursive=1`,
         {
           headers: {
-            'User-Agent': 'CodeGraph-Ingestion-Engine/1.0',
+            'User-Agent': 'Nodal-Ingestion-Engine/1.0',
             Accept: 'application/vnd.github.v3+json',
           },
           signal: AbortSignal.timeout(12000),
@@ -151,7 +151,7 @@ export async function downloadGitHubRepository(
               for (const u of urls) {
                 try {
                   const res = await fetch(u, {
-                    headers: { 'User-Agent': 'CodeGraph-Ingestion-Engine/1.0' },
+                    headers: { 'User-Agent': 'Nodal-Ingestion-Engine/1.0' },
                     signal: AbortSignal.timeout(10000),
                   });
 
@@ -221,7 +221,7 @@ export async function downloadGitHubRepository(
       try {
         const res = await fetch(url, {
           headers: {
-            'User-Agent': 'CodeGraph-Ingestion-Engine/1.0',
+            'User-Agent': 'Nodal-Ingestion-Engine/1.0',
           },
           redirect: 'follow',
           signal: AbortSignal.timeout(180000),

@@ -27,7 +27,8 @@ export class GitHubWriteService {
   static assertSafeTargetBranch(
     branchName: string,
     defaultBranch: string,
-    isProtectedBranch: boolean = false
+    isProtectedBranch: boolean = false,
+    options?: { allowLegacyPrefix?: boolean }
   ): void {
     const clean = (branchName || '').trim();
     if (!clean) {
@@ -53,17 +54,21 @@ export class GitHubWriteService {
       );
     }
 
-    if (!lower.startsWith('codegraph/')) {
+    const hasValidPrefix =
+      lower.startsWith('nodal/') ||
+      (options?.allowLegacyPrefix === true && lower.startsWith('codegraph/'));
+
+    if (!hasValidPrefix) {
       throw new Error(
-        `Safety guard blocked GitHub write: target branch '${clean}' must be under the 'codegraph/' namespace.`
+        `Safety guard blocked GitHub write: target branch '${clean}' must be under the 'nodal/' namespace.`
       );
     }
   }
 
   /**
    * Generates a deterministic, Git-safe branch name:
-   * - Issue-linked: codegraph/<issue-number>-<short-slug>
-   * - Legacy / non-issue plan: codegraph/feature-plan-<id>-v<version>
+   * - Issue-linked: nodal/<issue-number>-<short-slug>
+   * - Legacy / non-issue plan: nodal/feature-plan-<id>-v<version>
    */
   static buildBranchName(params: {
     featurePlanId: string;
@@ -80,14 +85,14 @@ export class GitHubWriteService {
         .replace(/^-+|-+$/g, '')
         .slice(0, 40)
         .replace(/-+$/g, '');
-      return `codegraph/${params.issueNumber}-${slug || 'fix'}`;
+      return `nodal/${params.issueNumber}-${slug || 'fix'}`;
     }
 
     const cleanPlanId = params.featurePlanId
       .replace(/^fp-/, '')
       .replace(/[^a-zA-Z0-9]/g, '')
       .slice(0, 16);
-    return `codegraph/feature-plan-${cleanPlanId}-v${params.changesetVersion}`.toLowerCase();
+    return `nodal/feature-plan-${cleanPlanId}-v${params.changesetVersion}`.toLowerCase();
   }
 
   /**
@@ -234,7 +239,7 @@ export class GitHubWriteService {
     );
 
     if (repoRes.rows.length === 0) {
-      throw new Error('Target repository not found in CodeGraph.');
+      throw new Error('Target repository not found in Nodal.');
     }
 
     const repoRow = repoRes.rows[0];
@@ -696,7 +701,7 @@ export class GitHubWriteService {
     );
 
     if (repoRes.rows.length === 0) {
-      throw new Error('Target repository not found in CodeGraph.');
+      throw new Error('Target repository not found in Nodal.');
     }
 
     const repoRow = repoRes.rows[0];
@@ -720,7 +725,9 @@ export class GitHubWriteService {
       );
     }
 
-    this.assertSafeTargetBranch(existingBranch.branchName, existingBranch.baseBranch);
+    this.assertSafeTargetBranch(existingBranch.branchName, existingBranch.baseBranch, false, {
+      allowLegacyPrefix: true,
+    });
 
     const hostOwner = existingBranch.githubRepoOwner || upstreamOwner;
     const hostRepo = existingBranch.githubRepoName || upstreamRepo;
@@ -746,7 +753,7 @@ export class GitHubWriteService {
     // Ensure the branch has not moved unexpectedly since Phase 4.1
     if (currentBranchSha !== existingBranch.baseSha && currentBranchSha !== existingBranch.commitSha) {
       throw new Error(
-        `GitHub branch '${existingBranch.branchName}' has changed unexpectedly since CodeGraph prepared the changes. Refresh the branch state before committing.`
+        `GitHub branch '${existingBranch.branchName}' has changed unexpectedly since Nodal prepared the changes. Refresh the branch state before committing.`
       );
     }
 
@@ -797,7 +804,7 @@ export class GitHubWriteService {
       .map((c) => `- ${c.changeType.toUpperCase()}: ${c.filePath}`)
       .join('\n');
 
-    const defaultCommitMessage = `[CodeGraph] ${changeset.summary} (v${changeset.version})\n\nFeature Plan: ${changeset.featurePlanId}\nFiles Changed:\n${filesSummary}`;
+    const defaultCommitMessage = `[Nodal] ${changeset.summary} (v${changeset.version})\n\nFeature Plan: ${changeset.featurePlanId}\nFiles Changed:\n${filesSummary}`;
     const commitMessage = (customCommitMessage && customCommitMessage.trim()) || defaultCommitMessage;
 
     // 10. Create ONE commit via Git Data API
@@ -979,7 +986,7 @@ export class GitHubWriteService {
     );
 
     if (repoRes.rows.length === 0) {
-      throw new Error('Target repository not found in CodeGraph.');
+      throw new Error('Target repository not found in Nodal.');
     }
 
     const repoRow = repoRes.rows[0];
@@ -1009,7 +1016,9 @@ export class GitHubWriteService {
       );
     }
 
-    this.assertSafeTargetBranch(branch.branchName, branch.baseBranch);
+    this.assertSafeTargetBranch(branch.branchName, branch.baseBranch, false, {
+      allowLegacyPrefix: true,
+    });
 
     const branchHostOwner = branch.githubRepoOwner || upstreamOwner;
     const branchHostRepo = branch.githubRepoName || upstreamRepo;
@@ -1035,7 +1044,7 @@ export class GitHubWriteService {
 
     if (branchRef.object.sha !== branch.commitSha) {
       throw new Error(
-        `Feature branch head on GitHub (${branchRef.object.sha.slice(0, 7)}) does not match the CodeGraph commit (${branch.commitSha.slice(0, 7)}). Aborting Pull Request creation to protect repository state.`
+        `Feature branch head on GitHub (${branchRef.object.sha.slice(0, 7)}) does not match the Nodal commit (${branch.commitSha.slice(0, 7)}). Aborting Pull Request creation to protect repository state.`
       );
     }
 
@@ -1158,7 +1167,7 @@ export class GitHubWriteService {
     }
 
     const titleSeed = fpIssueTitle || fpFeatureRequest || changeset.summary;
-    const defaultTitle = `[CodeGraph] ${titleSeed.slice(0, 80)}`;
+    const defaultTitle = `[Nodal] ${titleSeed.slice(0, 80)}`;
     const title = (customTitle && customTitle.trim()) || defaultTitle;
 
     // 9. Generate deterministic markdown PR Body
@@ -1179,7 +1188,7 @@ export class GitHubWriteService {
 
     const fixesLine = fpIssueNumber ? `Fixes #${fpIssueNumber}\n\n` : '';
     const defaultBody = `${fixesLine}## Summary
-${changeset.summary || fpFeatureRequest || 'Code changes implemented by CodeGraph.'}
+${changeset.summary || fpFeatureRequest || 'Code changes implemented by Nodal.'}
 
 ## Changes
 ${filesSummary}
@@ -1188,7 +1197,7 @@ ${filesSummary}
 ${validationSection}
 
 ---
-*Generated with [CodeGraph](https://github.com/) • Changeset v${changeset.version} • Commit \`${branch.commitSha.slice(0, 7)}\`*`;
+*Generated with Nodal • Changeset v${changeset.version} • Commit \`${branch.commitSha.slice(0, 7)}\`*`;
 
     const body = (customBody && customBody.trim()) || defaultBody;
 

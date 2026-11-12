@@ -1,10 +1,10 @@
-# CodeGraph
+# Nodal
 
 ### AI-Powered Repository Intelligence & Developer Workflow
 
-CodeGraph is an AI-powered developer tool that helps developers **understand, explore, modify, validate, and ship codebases**.
+Nodal is an AI-powered developer tool that helps developers **understand, explore, modify, validate, and ship codebases**.
 
-Instead of treating a repository as a collection of files, CodeGraph builds an understanding of the codebase using:
+Instead of treating a repository as a collection of files, Nodal builds an understanding of the codebase using:
 
 - Semantic search
 - Vector embeddings
@@ -24,9 +24,9 @@ The goal is simple:
 
 ---
 
-## 🚀 What CodeGraph Does
+## 🚀 What Nodal Does
 
-CodeGraph provides an end-to-end workflow for working with unfamiliar or complex repositories.
+Nodal provides an end-to-end workflow for working with unfamiliar or complex repositories.
 
 ```text
 Repository
@@ -62,7 +62,7 @@ This allows developers to move from **understanding a repository** to **safely i
 
 ## 📦 Repository Ingestion
 
-CodeGraph can ingest repositories from:
+Nodal can ingest repositories from:
 
 - Uploaded repository files
 - GitHub repository URLs
@@ -74,7 +74,7 @@ During ingestion, the repository is analyzed and its contents are stored for fur
 
 ## 🔎 Semantic Code Search
 
-CodeGraph converts repository content into semantic chunks and generates vector embeddings.
+Nodal converts repository content into semantic chunks and generates vector embeddings.
 
 This enables meaning-based search instead of relying only on exact keyword matching.
 
@@ -84,7 +84,7 @@ For example, instead of searching for:
 authentication
 ```
 
-CodeGraph can retrieve code related to:
+Nodal can retrieve code related to:
 
 - Login
 - Sessions
@@ -98,7 +98,7 @@ even when the exact search term does not appear in the source code.
 
 ## 🧠 Repository-Aware AI Chat
 
-CodeGraph provides an AI chat interface that uses repository context to answer questions about the codebase.
+Nodal provides an AI chat interface that uses repository context to answer questions about the codebase.
 
 The system uses Retrieval-Augmented Generation (RAG) to retrieve relevant code before generating a response.
 
@@ -122,7 +122,7 @@ What would I need to change to add email verification?
 
 # 🕸️ AST-Based Code Graph
 
-CodeGraph uses AST analysis to understand the structure of the source code.
+Nodal uses AST analysis to understand the structure of the source code.
 
 The system extracts symbols such as:
 
@@ -174,7 +174,7 @@ What parts of the system are connected to this component?
 
 # 📁 File Explorer
 
-CodeGraph includes a repository file explorer for navigating analyzed repositories.
+Nodal includes a repository file explorer for navigating analyzed repositories.
 
 Developers can:
 
@@ -190,7 +190,7 @@ This connects the abstract architecture graph back to the actual source code.
 
 # 🔐 Authentication
 
-CodeGraph supports authentication through Supabase Auth.
+Nodal supports authentication through Supabase Auth.
 
 Supported authentication methods include:
 
@@ -206,7 +206,7 @@ Sensitive GitHub provider tokens remain server-side and are not exposed to the f
 
 # 📝 AI Feature Planning
 
-CodeGraph can turn a natural-language feature request into an implementation plan.
+Nodal can turn a natural-language feature request into an implementation plan.
 
 For example:
 
@@ -222,7 +222,7 @@ The planning stage is designed to happen **before code generation**.
 
 # 🤖 AI Code Generation
 
-After approving a feature plan, CodeGraph can generate the required code changes.
+After approving a feature plan, Nodal can generate the required code changes.
 
 Instead of immediately modifying the repository, the generated changes are represented as a versioned changeset.
 
@@ -263,7 +263,7 @@ The original repository is not immediately overwritten.
 
 # 📊 Diff Viewer
 
-CodeGraph provides a Git-style diff viewer for generated changes.
+Nodal provides a Git-style diff viewer for generated changes.
 
 Developers can inspect:
 
@@ -295,7 +295,7 @@ rather than blindly applying AI-generated code.
 
 # 🧪 Automated Code Validation
 
-Before changes are shipped, CodeGraph can validate the proposed changes inside a temporary workspace.
+Before changes are shipped, Nodal can validate the proposed changes inside a temporary workspace.
 
 Validation can detect and use repository tooling where applicable.
 
@@ -328,7 +328,7 @@ This prevents missing tooling from being confused with broken code.
 
 # 🐙 GitHub Integration
 
-CodeGraph integrates with GitHub to provide a controlled path from generated code to an actual repository change.
+Nodal integrates with GitHub to provide a controlled path from generated code to an actual repository change.
 
 The GitHub workflow is designed around feature branches rather than directly modifying the default branch.
 
@@ -348,12 +348,12 @@ Pull Request
 
 # 🌿 Safe Feature Branches
 
-CodeGraph never directly modifies the repository's default branch during the feature workflow.
+Nodal never directly modifies the repository's default branch during the feature workflow.
 
 Feature branches are created using a deterministic naming pattern:
 
 ```text
-codegraph/feature-plan-{planId}-v{version}
+nodal/feature-plan-{planId}-v{version}
 ```
 
 The system dynamically detects the repository's default branch before creating the feature branch.
@@ -362,9 +362,9 @@ The system dynamically detects the repository's default branch before creating t
 
 # 🛡️ Repository Drift Protection
 
-One of the most important safety mechanisms in CodeGraph is repository drift detection.
+One of the most important safety mechanisms in Nodal is repository drift detection.
 
-Suppose CodeGraph generated a change based on:
+Suppose Nodal generated a change based on:
 
 ```text
 Version A
@@ -378,7 +378,7 @@ Version B
 
 Applying the old changes blindly could overwrite newer developer work.
 
-CodeGraph therefore checks whether the repository still matches the state against which the changeset was generated.
+Nodal therefore checks whether the repository still matches the state against which the changeset was generated.
 
 If the repository has drifted:
 
@@ -409,7 +409,7 @@ The workflow is designed to:
 
 # 🔗 Pull Request Creation
 
-After changes are committed and pushed, CodeGraph can create a GitHub Pull Request.
+After changes are committed and pushed, Nodal can create a GitHub Pull Request.
 
 The Pull Request workflow includes:
 
@@ -420,7 +420,7 @@ The Pull Request workflow includes:
 - Validation summary
 - Changeset information
 
-CodeGraph does **not automatically merge the Pull Request**.
+Nodal does **not automatically merge the Pull Request**.
 
 The final merge decision remains with the developer.
 
@@ -529,7 +529,7 @@ The final merge decision remains with the developer.
 # 📂 Project Structure
 
 ```text
-CodeGraph/
+Nodal/
 │
 ├── src/
 │   ├── app/
@@ -578,7 +578,7 @@ CodeGraph/
 
 # 🗄️ Core Data Model
 
-CodeGraph stores information about repositories, files, semantic chunks, code symbols, relationships, plans, changesets, and GitHub operations.
+Nodal stores information about repositories, files, semantic chunks, code symbols, relationships, plans, changesets, and GitHub operations.
 
 The main concepts include:
 
@@ -623,7 +623,7 @@ File Storage
 
 ## 2. Analyze the Repository
 
-CodeGraph processes the repository and creates:
+Nodal processes the repository and creates:
 
 ```text
 Source Files
@@ -677,7 +677,7 @@ The developer describes a desired change.
 "Add password reset functionality."
 ```
 
-CodeGraph analyzes the repository and generates a feature plan.
+Nodal analyzes the repository and generates a feature plan.
 
 ---
 
@@ -689,7 +689,7 @@ The developer reviews the proposed implementation before code generation.
 
 ## 7. Generate Code
 
-After approval, CodeGraph generates a versioned changeset.
+After approval, Nodal generates a versioned changeset.
 
 ```text
 Feature Plan
@@ -709,7 +709,7 @@ The developer inspects the generated changes using the diff viewer.
 
 ## 9. Validate
 
-CodeGraph creates a temporary workspace and validates the proposed changes using applicable repository tooling.
+Nodal creates a temporary workspace and validates the proposed changes using applicable repository tooling.
 
 ```text
 Changeset
@@ -731,12 +731,12 @@ Only after the developer reviews and approves the changes can they proceed to th
 
 ## 11. Create Feature Branch
 
-CodeGraph creates a dedicated feature branch.
+Nodal creates a dedicated feature branch.
 
 ```text
 main
  │
- └── codegraph/feature-plan-...
+ └── nodal/feature-plan-...
 ```
 
 The default branch is not directly modified.
@@ -751,7 +751,7 @@ The approved changes are committed and pushed to the feature branch.
 
 ## 13. Create Pull Request
 
-CodeGraph creates a Pull Request targeting the repository's default branch.
+Nodal creates a Pull Request targeting the repository's default branch.
 
 The developer retains control over the final merge.
 
@@ -759,7 +759,7 @@ The developer retains control over the final merge.
 
 # 🔒 Security Principles
 
-CodeGraph follows several principles when handling repositories and GitHub operations.
+Nodal follows several principles when handling repositories and GitHub operations.
 
 ### No Direct Default-Branch Modification
 
@@ -805,7 +805,7 @@ Make sure you have:
 
 ```bash
 git clone <your-repository-url>
-cd CodeGraph
+cd Nodal
 ```
 
 ---
@@ -844,7 +844,7 @@ Do not commit `.env.local` or any secret credentials to Git.
 
 # 🗃️ Database Setup
 
-CodeGraph uses Supabase PostgreSQL with `pgvector`.
+Nodal uses Supabase PostgreSQL with `pgvector`.
 
 Apply the database migrations located in:
 
@@ -939,7 +939,7 @@ node --import tsx --test <test-file>
 
 # 🎯 Design Philosophy
 
-CodeGraph is built around three principles.
+Nodal is built around three principles.
 
 ## 1. Understand Before Modifying
 
@@ -983,7 +983,7 @@ The developer remains in control of the final change.
 
 ## 3. Never Destroy Existing Work
 
-Before applying changes, CodeGraph verifies that the repository still matches the state against which the changeset was generated.
+Before applying changes, Nodal verifies that the repository still matches the state against which the changeset was generated.
 
 If it does not:
 
@@ -1047,7 +1047,7 @@ Built as an exploration of AI-assisted software engineering, repository intellig
 
 # ⭐ Project Summary
 
-CodeGraph is designed to bridge the gap between **AI-generated code** and **responsible software engineering**.
+Nodal is designed to bridge the gap between **AI-generated code** and **responsible software engineering**.
 
 It combines:
 

@@ -57,7 +57,7 @@ export const GitHubConnectionCard: React.FC<GitHubConnectionCardProps> = ({
   };
 
   const handleDisconnect = async () => {
-    if (!confirm('Are you sure you want to disconnect your GitHub account from CodeGraph?')) {
+    if (!confirm('Are you sure you want to disconnect your GitHub account from Nodal?')) {
       return;
     }
 

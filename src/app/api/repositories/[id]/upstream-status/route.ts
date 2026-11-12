@@ -54,7 +54,7 @@ export async function GET(
           `https://api.github.com/repos/${encodeURIComponent(parsed.owner)}/${encodeURIComponent(parsed.repo)}/git/ref/heads/${encodeURIComponent(defaultBranch)}`,
           {
             headers: {
-              'User-Agent': 'CodeGraph-Platform/1.0',
+              'User-Agent': 'Nodal-Platform/1.0',
               Accept: 'application/vnd.github+json',
             },
             signal: AbortSignal.timeout(5000),
@@ -74,7 +74,7 @@ export async function GET(
     );
 
     const warning = upstreamMoved
-      ? `Upstream '${parsed.owner}/${parsed.repo}:${resolvedBranch}' has new commits since CodeGraph indexed it (indexed at ${indexedCommitSha!.slice(
+      ? `Upstream '${parsed.owner}/${parsed.repo}:${resolvedBranch}' has new commits since Nodal indexed it (indexed at ${indexedCommitSha!.slice(
           0,
           7
         )}, live HEAD is ${liveHeadSha!.slice(0, 7)}). Creating a PR will check affected files for conflicts.`

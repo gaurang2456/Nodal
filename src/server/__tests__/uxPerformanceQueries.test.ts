@@ -41,9 +41,9 @@ describe('UX Performance & TanStack Query Keys & State Isolation Tests', () => {
 
     const mapped = mapBackendRepoToRepository({
       id: 'r1',
-      name: 'CodeGraph',
-      full_name: 'org/codegraph',
-      github_url: 'https://github.com/org/codegraph',
+      name: 'Nodal',
+      full_name: 'org/nodal',
+      github_url: 'https://github.com/org/nodal',
       status: 'COMPLETED',
       stage: 'Ready',
       progress: 100,
@@ -51,7 +51,7 @@ describe('UX Performance & TanStack Query Keys & State Isolation Tests', () => {
     });
 
     assert.strictEqual(mapped.id, 'r1');
-    assert.strictEqual(mapped.name, 'CodeGraph');
+    assert.strictEqual(mapped.name, 'Nodal');
     assert.strictEqual(mapped.primaryLanguage, 'Code');
     assert.strictEqual(mapped.framework, 'Standard');
     assert.strictEqual(mapped.fileCount, 0);

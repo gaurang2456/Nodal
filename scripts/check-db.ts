@@ -52,7 +52,7 @@ async function runHealthCheck() {
   const dbUrl = process.env.DATABASE_URL;
 
   console.log('==================================================');
-  console.log('CodeGraph Database Health Check');
+  console.log('Nodal Database Health Check');
   console.log('==================================================');
 
   if (!dbUrl) {
@@ -86,7 +86,7 @@ async function runHealthCheck() {
       console.log(`pgvector:          ENABLED (Successfully created extension)`);
     }
 
-    // 3. Verify CodeGraph tables exist
+    // 3. Verify Nodal tables exist
     const tablesRes = await query(`
       SELECT table_name
       FROM information_schema.tables

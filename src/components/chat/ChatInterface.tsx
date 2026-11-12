@@ -146,7 +146,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ activeRepo }) => {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-[#e3e2e6] flex items-center gap-2">
-              CodeGraph AI Assistant
+              Nodal AI Assistant
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#fbcfe8]/10 text-[#fbcfe8] border border-[#fbcfe8]/20">
                 {activeRepo.name}
               </span>

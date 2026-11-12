@@ -31,7 +31,7 @@ export async function GET(request: Request) {
       return NextResponse.redirect(`${redirectBase}/?github_error=exchange_failed`);
     }
 
-    // Step 3: Retrieve authenticated CodeGraph user
+    // Step 3: Retrieve authenticated Nodal user
     const user = data.session.user;
     if (!user || !user.id) {
       return NextResponse.redirect(`${redirectBase}/?github_error=no_user`);
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       headers: {
         Authorization: `Bearer ${providerToken}`,
         Accept: 'application/vnd.github+json',
-        'User-Agent': 'CodeGraph-Platform/1.0',
+        'User-Agent': 'Nodal-Platform/1.0',
       },
     });
 

@@ -81,7 +81,7 @@ export default function SignupPage() {
             <span className="material-symbols-outlined text-[26px]">hub</span>
           </div>
           <h1 className="text-2xl font-heading font-bold text-white tracking-tight">
-            Create CodeGraph Account
+            Create Nodal Account
           </h1>
           <p className="text-xs text-[#938f98] leading-relaxed">
             Index, visualize, and interact with your private repositories

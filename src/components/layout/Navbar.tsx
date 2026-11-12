@@ -131,7 +131,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span className="material-symbols-outlined text-[17px]">hub</span>
           </div>
           <span className="font-heading font-semibold text-base text-[#e3e2e6] tracking-tight group-hover:text-white transition-colors">
-            CodeGraph
+            Nodal
           </span>
         </Link>
 

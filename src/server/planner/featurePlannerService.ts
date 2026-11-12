@@ -132,7 +132,7 @@ export class FeaturePlannerService {
           }.`;
 
     // 4. Build prompt treating issue text strictly as untrusted data
-    const prompt = `You are CodeGraph Contributor Planner, a senior engineer helping an open-source contributor resolve an issue accurately.
+    const prompt = `You are Nodal Contributor Planner, a senior engineer helping an open-source contributor resolve an issue accurately.
 Analyze the retrieved repository source code below and produce a concise, concrete implementation plan strictly grounded in real files and symbols.
 
 --- REPOSITORY METADATA ---
@@ -351,7 +351,7 @@ ${safeIssueBody}
             lexicalMatchedFiles.length > 0 ? lexicalMatchedFiles.join(', ') : 'none'
           }.`;
 
-    const prompt = `You are CodeGraph Contributor Planner, refining a previous implementation plan based on contributor feedback while staying strictly grounded in verified repository evidence.
+    const prompt = `You are Nodal Contributor Planner, refining a previous implementation plan based on contributor feedback while staying strictly grounded in verified repository evidence.
 
 --- REPOSITORY METADATA ---
 Repository: ${repo.full_name || repo.name}
@@ -691,7 +691,7 @@ ${safeFeedback || 'No specific feedback provided — rethink the approach for cl
           messages: [
             {
               role: 'system',
-              content: 'You are CodeGraph Contributor Planner. Respond ONLY with the requested JSON object.',
+              content: 'You are Nodal Contributor Planner. Respond ONLY with the requested JSON object.',
             },
             {
               role: 'user',

@@ -143,7 +143,7 @@ IMPORTANT: Revise the previous implementation above to address the contributor f
       : '';
 
     // 7. Build the prompt
-    const prompt = `You are CodeGraph AI Code Generator.
+    const prompt = `You are Nodal AI Code Generator.
 You must generate the complete proposed code implementations for the requested feature based on the approved feature plan and the actual repository files.
 
 --- REPOSITORY INFORMATION ---
@@ -521,7 +521,7 @@ ${symbolsBlock || 'No direct AST symbols for these files.'}
           messages: [
             {
               role: 'system',
-              content: 'You are CodeGraph AI Code Generator. Respond ONLY with valid JSON matching the schema.',
+              content: 'You are Nodal AI Code Generator. Respond ONLY with valid JSON matching the schema.',
             },
             {
               role: 'user',

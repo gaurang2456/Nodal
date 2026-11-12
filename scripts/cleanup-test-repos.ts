@@ -31,7 +31,7 @@ import { getDbPool, query } from '../src/server/db/client';
 
 async function cleanupTestRepos() {
   console.log('==================================================');
-  console.log('CodeGraph Database Cleanup - Test & Orphan Repositories');
+  console.log('Nodal Database Cleanup - Test & Orphan Repositories');
   console.log('==================================================');
 
   try {

@@ -4,7 +4,7 @@ import { CodeParser } from '../parsing/codeParser';
 import { ParsedChunk } from '../parsing/types';
 import { EmbeddingService } from '../embeddings/embeddingService';
 import { SummaryService } from '../summary/summaryService';
-import { CodeGraphEngine } from '../analyzer/codeGraphEngine';
+import { NodalEngine } from '../analyzer/nodalEngine';
 import { query } from '../db/client';
 
 export class IndexingPipeline {
@@ -105,7 +105,7 @@ export class IndexingPipeline {
       // Stage: AST Symbol & Code Relationship Graph Analysis (Phase 2 Engine)
       try {
         await this.updateProgress(repositoryId, 'PARSING', 'Extracting AST symbols and mapping relationships...', 68);
-        const graphResult = await CodeGraphEngine.analyzeAndStore(repositoryId, files);
+        const graphResult = await NodalEngine.analyzeAndStore(repositoryId, files);
         console.log(
           `📊 AST Graph analysis complete for ${repositoryId}: ${graphResult.symbols.length} symbols, ${graphResult.relationships.length} relationships, ${graphResult.errors.length} file notices.`
         );

@@ -695,7 +695,7 @@ export function buildGraphViewModel(
   const layoutedNodes = applyDagreLayout(rfNodes, rfEdges, layoutDirection);
 
   console.log(
-    `[CodeGraph Telemetry] Total API: ${totalAvailableNodes} nodes, ${rawEdges.length} edges | Visible: ${rfNodes.length} nodes, ${rfEdges.length} edges`
+    `[Nodal Telemetry] Total API: ${totalAvailableNodes} nodes, ${rawEdges.length} edges | Visible: ${rfNodes.length} nodes, ${rfEdges.length} edges`
   );
 
   return {
@@ -775,7 +775,7 @@ export function applyDagreLayout(
 
     const t1 = performance.now();
     console.log(
-      `[CodeGraph Perf] Layout #${layoutExecutionCount} computed for ${nodes.length} nodes, ${edges.length} edges in ${(t1 - t0).toFixed(1)}ms`
+      `[Nodal Perf] Layout #${layoutExecutionCount} computed for ${nodes.length} nodes, ${edges.length} edges in ${(t1 - t0).toFixed(1)}ms`
     );
   }
 

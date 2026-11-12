@@ -2,7 +2,7 @@ import { CodeAnalyzer, AnalysisResult, RepositoryFile, CodeSymbol, CodeRelations
 import { TypeScriptAnalyzer } from './analyzers/typeScriptAnalyzer';
 import { GraphStorage } from './graphStorage';
 
-export class CodeGraphEngine {
+export class NodalEngine {
   private static analyzers: CodeAnalyzer[] = [
     new TypeScriptAnalyzer(),
   ];
@@ -32,7 +32,7 @@ export class CodeGraphEngine {
         allRelationships.push(...result.relationships);
         allErrors.push(...result.errors);
       } catch (err: any) {
-        console.error(`[CodeGraphEngine] Error in ${analyzer.name}:`, err);
+        console.error(`[NodalEngine] Error in ${analyzer.name}:`, err);
         allErrors.push({
           filePath: 'analyzer-execution',
           message: `${analyzer.name} failed: ${err?.message || err}`,
@@ -61,9 +61,9 @@ export class CodeGraphEngine {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);
 
-    console.log(`[CodeGraphEngine Telemetry] Files: ${files.length} analyzed | Symbols: ${allSymbols.length} extracted | Relationships: ${allRelationships.length}`);
-    console.log(`[CodeGraphEngine Telemetry] By Ext:`, Object.fromEntries(extCounts));
-    console.log(`[CodeGraphEngine Telemetry] Top Files Producing Symbols:`, topFiles.map(([f, c]) => `${f} (${c})`));
+    console.log(`[NodalEngine Telemetry] Files: ${files.length} analyzed | Symbols: ${allSymbols.length} extracted | Relationships: ${allRelationships.length}`);
+    console.log(`[NodalEngine Telemetry] By Ext:`, Object.fromEntries(extCounts));
+    console.log(`[NodalEngine Telemetry] Top Files Producing Symbols:`, topFiles.map(([f, c]) => `${f} (${c})`));
 
     return {
       symbols: allSymbols,

@@ -291,7 +291,7 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
       assert.strictEqual(branch.stagedTreeSha, 'staged-tree-sha-999');
       assert.strictEqual(branch.status, 'staged');
       assert.strictEqual(branch.fileCount, 2);
-      assert.ok(branch.branchName.startsWith('codegraph/feature-plan-'));
+      assert.ok(branch.branchName.startsWith('nodal/feature-plan-'));
 
       // Verify persistence in changeset_branches table
       const stored = await GitHubWriteService.getBranchForChangeset(testChangesetId, testUserId);
@@ -467,7 +467,7 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
   });
 
   // Test 10: Branch safety guards & issue branch naming
-  test('10. Safety Guards & Branch Naming: blocks default/protected branches and uses codegraph/<issue>-<slug>', () => {
+  test('10. Safety Guards & Branch Naming: blocks default/protected branches, uses nodal/<issue>-<slug>, and gates legacy codegraph/ prefix', () => {
     assert.throws(
       () => GitHubWriteService.assertSafeTargetBranch('main', 'main'),
       /default or protected branch/i
@@ -481,16 +481,52 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
       /default or protected branch/i
     );
     assert.throws(
-      () => GitHubWriteService.assertSafeTargetBranch('codegraph/feature', 'main', true),
+      () => GitHubWriteService.assertSafeTargetBranch('nodal/feature', 'main', true),
       /default or protected branch/i
     );
     assert.throws(
       () => GitHubWriteService.assertSafeTargetBranch('feature/foo', 'main'),
-      /must be under the 'codegraph\/' namespace/i
+      /must be under the 'nodal\/' namespace/i
     );
 
-    // Safe codegraph/ branches pass
-    GitHubWriteService.assertSafeTargetBranch('codegraph/42-profile-edit-button', 'main', false);
+    // New branches must reject legacy codegraph/ prefix by default
+    assert.throws(
+      () => GitHubWriteService.assertSafeTargetBranch('codegraph/feature', 'main', false),
+      /must be under the 'nodal\/' namespace/i
+    );
+
+    // Existing legacy rows may pass ONLY when allowLegacyPrefix is enabled
+    GitHubWriteService.assertSafeTargetBranch('codegraph/42-legacy-branch', 'main', false, {
+      allowLegacyPrefix: true,
+    });
+
+    // Protected or default branches are STILL rejected regardless of prefix or allowLegacyPrefix
+    assert.throws(
+      () =>
+        GitHubWriteService.assertSafeTargetBranch('codegraph/protected', 'main', true, {
+          allowLegacyPrefix: true,
+        }),
+      /default or protected branch/i
+    );
+    assert.throws(
+      () =>
+        GitHubWriteService.assertSafeTargetBranch('codegraph/main', 'codegraph/main', false, {
+          allowLegacyPrefix: true,
+        }),
+      /default or protected branch/i
+    );
+    assert.throws(
+      () =>
+        GitHubWriteService.assertSafeTargetBranch('nodal/main', 'nodal/main', false),
+      /default or protected branch/i
+    );
+    assert.throws(
+      () => GitHubWriteService.assertSafeTargetBranch('main', 'main', false, { allowLegacyPrefix: true }),
+      /default or protected branch/i
+    );
+
+    // Safe nodal/ branches pass
+    GitHubWriteService.assertSafeTargetBranch('nodal/42-profile-edit-button', 'main', false);
 
     // Issue-linked branch naming
     const issueBranch = GitHubWriteService.buildBranchName({
@@ -499,7 +535,7 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
       issueNumber: 42,
       issueTitle: 'Profile.js: Edit button is non-functional!',
     });
-    assert.strictEqual(issueBranch, 'codegraph/42-profile-js-edit-button-is-non-functional');
+    assert.strictEqual(issueBranch, 'nodal/42-profile-js-edit-button-is-non-functional');
   });
 
   // Test 11: Contributor fork-first workflow (branches at upstreamHeadSha before sync, detects upstream moved, cross-repo PR)
@@ -599,7 +635,7 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
         if (owner === 'test-dev-user' && ref === 'heads/main') {
           return { ref: 'refs/heads/main', object: { sha: 'fork-old-sha-111', type: 'commit' } };
         }
-        if (owner === 'test-dev-user' && ref.startsWith('heads/codegraph/42-')) {
+        if (owner === 'test-dev-user' && ref.startsWith('heads/nodal/42-')) {
           return callOrder.includes('createCommit')
             ? { ref: `refs/${ref}`, object: { sha: 'new-pr-commit-sha', type: 'commit' } }
             : callOrder.some((c) => c.startsWith('createRef:'))
@@ -678,14 +714,14 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
       assert.strictEqual(callOrder[0], 'createFork');
       assert.ok(callOrder.includes('createRef:upstream-live-sha-999'));
       assert.strictEqual(result.branch.githubRepoOwner, 'test-dev-user');
-      assert.ok(result.branch.branchName.startsWith('codegraph/42-'));
+      assert.ok(result.branch.branchName.startsWith('nodal/42-'));
       assert.strictEqual(result.branch.metadata?.isFork, true);
       assert.ok(
         String(result.branch.metadata?.upstreamMovedWarning || '').includes('moved since indexing'),
         'Must warn when indexed_commit_sha differs from live upstream HEAD'
       );
       assert.strictEqual(capturedPrOwner, 'upstream-org');
-      assert.ok(capturedPrHead.startsWith('test-dev-user:codegraph/42-'));
+      assert.ok(capturedPrHead.startsWith('test-dev-user:nodal/42-'));
       assert.ok(capturedPrBody.includes('Fixes #42'), 'PR body must link issue #42');
       assert.strictEqual(result.pullRequest.isFork, true);
       assert.strictEqual(result.pullRequest.headOwner, 'test-dev-user');
@@ -824,6 +860,119 @@ describe('Phase 4.1: GitHub Branch Creation, Drift Detection & Changeset Staging
     } finally {
       Object.assign(GitHubApiClient.prototype, originals);
       await query(`DELETE FROM repositories WHERE id = $1`, [repo409Id]);
+    }
+  });
+
+  // Test 13: Legacy codegraph/ branch rows remain valid for commit/PR, while default/protected rows remain blocked
+  test('13. Legacy Prefix Compatibility: allows existing codegraph/ row in commit & PR flows while blocking protected branches', async () => {
+    if (!process.env.DATABASE_URL) return;
+
+    const legacyRepoId = `test-repo-legacy-${Date.now()}`;
+    const legacyPlanId = `fp-legacy-${Date.now()}`;
+    const legacyCsId = `cs-legacy-${Date.now()}`;
+    const protectedCsId = `cs-protected-${Date.now()}`;
+    const legacyBranch = 'codegraph/12-legacy-issue';
+
+    await query(
+      `INSERT INTO repositories (id, name, full_name, source_type, github_url, user_id, status, branch)
+       VALUES ($1, 'LegacyRepo', 'testowner/legacyrepo', 'github', 'https://github.com/testowner/legacyrepo', $2, 'COMPLETED', 'main')`,
+      [legacyRepoId, testUserId]
+    );
+    await query(
+      `INSERT INTO feature_plans (id, repository_id, user_id, feature_request, issue_number, issue_title, plan_json, status)
+       VALUES ($1, $2, $3, 'Legacy issue', 12, 'Legacy issue', '{}'::jsonb, 'COMPLETED')`,
+      [legacyPlanId, legacyRepoId, testUserId]
+    );
+    await query(
+      `INSERT INTO generated_changesets (id, feature_plan_id, repository_id, user_id, version, status, summary)
+       VALUES ($1, $2, $3, $4, 1, 'approved', 'Legacy changeset'),
+              ($5, $2, $3, $4, 2, 'approved', 'Tampered default branch changeset')`,
+      [legacyCsId, legacyPlanId, legacyRepoId, testUserId, protectedCsId]
+    );
+    await query(
+      `INSERT INTO generated_file_changes (id, changeset_id, file_path, change_type, reason, original_content, proposed_content)
+       VALUES ($1, $2, 'src/a.ts', 'modify', 'Update', 'export const a = 1;', 'export const a = 2;'),
+              ($3, $4, 'src/a.ts', 'modify', 'Update', 'export const a = 1;', 'export const a = 2;')`,
+      [`fc-leg-1-${Date.now()}`, legacyCsId, `fc-leg-2-${Date.now()}`, protectedCsId]
+    );
+    await query(
+      `INSERT INTO changeset_branches (
+        changeset_id, repository_id, user_id, github_repo_owner, github_repo_name,
+        branch_name, base_branch, base_sha, staged_tree_sha, status, file_count
+      )
+      VALUES ($1, $2, $3, 'testowner', 'legacyrepo', $4, 'main', 'legacy-base-sha', 'legacy-tree-sha', 'staged', 1),
+             ($5, $2, $3, 'testowner', 'legacyrepo', 'main', 'main', 'legacy-base-sha', 'legacy-tree-sha', 'staged', 1)`,
+      [legacyCsId, legacyRepoId, testUserId, legacyBranch, protectedCsId]
+    );
+
+    const originals = {
+      getRef: GitHubApiClient.prototype.getRef,
+      getFileContent: GitHubApiClient.prototype.getFileContent,
+      createCommit: GitHubApiClient.prototype.createCommit,
+      updateRef: GitHubApiClient.prototype.updateRef,
+      listPullRequests: GitHubApiClient.prototype.listPullRequests,
+      createPullRequest: GitHubApiClient.prototype.createPullRequest,
+    };
+
+    try {
+      let currentHeadSha = 'legacy-base-sha';
+
+      GitHubApiClient.prototype.getRef = async (_o, _r, ref) => {
+        if (ref === `heads/${legacyBranch}`) {
+          return { ref: `refs/${ref}`, object: { sha: currentHeadSha, type: 'commit' } };
+        }
+        return null;
+      };
+      GitHubApiClient.prototype.getFileContent = async () => ({
+        name: 'a.ts',
+        path: 'src/a.ts',
+        sha: 'file-sha-a',
+        size: 18,
+        content: Buffer.from('export const a = 1;').toString('base64'),
+        encoding: 'base64',
+      });
+      GitHubApiClient.prototype.createCommit = async (_o, _r, msg, treeSha, parents) => {
+        currentHeadSha = 'legacy-commit-sha-123';
+        return {
+          sha: currentHeadSha,
+          tree: { sha: treeSha, url: '' },
+          message: msg,
+          parents: parents.map((p) => ({ sha: p })),
+        };
+      };
+      GitHubApiClient.prototype.updateRef = async (_o, _r, ref, sha) => ({
+        ref: `refs/${ref}`,
+        object: { sha, type: 'commit' },
+      });
+      GitHubApiClient.prototype.listPullRequests = async () => [];
+      GitHubApiClient.prototype.createPullRequest = async (owner, repo, title, head, base, body) => ({
+        id: 77701,
+        number: 12,
+        html_url: `https://github.com/${owner}/${repo}/pull/12`,
+        url: '',
+        title,
+        body: body || '',
+        state: 'open',
+        head: { ref: head, sha: currentHeadSha },
+        base: { ref: base, sha: 'legacy-base-sha' },
+      });
+
+      const committed = await GitHubWriteService.commitAndPushChangeset(legacyCsId, testUserId);
+      assert.strictEqual(committed.branchName, legacyBranch);
+      assert.strictEqual(committed.commitSha, 'legacy-commit-sha-123');
+
+      const pr = await GitHubWriteService.createPullRequestForChangeset(legacyCsId, testUserId);
+      assert.strictEqual(pr.branchName, legacyBranch);
+      assert.strictEqual(pr.githubPrNumber, 12);
+
+      // Even for an existing row, a default/protected branch name MUST still be rejected
+      await assert.rejects(
+        () => GitHubWriteService.commitAndPushChangeset(protectedCsId, testUserId),
+        /refusing to write to default or protected branch/i
+      );
+    } finally {
+      Object.assign(GitHubApiClient.prototype, originals);
+      await query(`DELETE FROM repositories WHERE id = $1`, [legacyRepoId]);
     }
   });
 });

@@ -35,7 +35,7 @@ describe('Phase 4.2: GitHub Commit and Push to Feature Branch Tests', () => {
   const testPlanId = `fp-42-${Date.now()}`;
   const testChangesetId = `cs-42-approved-${Date.now()}`;
   const unapprovedChangesetId = `cs-42-ready-${Date.now()}`;
-  const branchName = `codegraph/feature-plan-test42-v1`;
+  const branchName = `nodal/feature-plan-test42-v1`;
   const baseSha = 'base-sha-commit-test-1234567890';
 
   before(async () => {
@@ -218,7 +218,7 @@ describe('Phase 4.2: GitHub Commit and Push to Feature Branch Tests', () => {
       await GitHubWriteService.commitAndPushChangeset(testChangesetId, testUserId);
       assert.fail('Should have detected branch concurrency collision and aborted');
     } catch (err: any) {
-      assert.ok(err.message.includes('changed unexpectedly since CodeGraph prepared the changes'));
+      assert.ok(err.message.includes('changed unexpectedly since Nodal prepared the changes'));
     } finally {
       GitHubApiClient.prototype.getRef = originalGetRef;
     }
@@ -332,7 +332,7 @@ describe('Phase 4.2: GitHub Commit and Push to Feature Branch Tests', () => {
       assert.strictEqual(result.branchName, branchName);
       assert.strictEqual(result.commitSha, 'new-commit-sha-42-successful');
       assert.strictEqual(result.status, 'committed');
-      assert.ok(result.commitMessage?.includes('[CodeGraph] Add audit logger service'));
+      assert.ok(result.commitMessage?.includes('[Nodal] Add audit logger service'));
       assert.strictEqual(
         result.commitUrl,
         'https://github.com/testowner/testcommitrepo/commit/new-commit-sha-42-successful'

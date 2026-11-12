@@ -32,7 +32,7 @@ describe('Phase 3 Part 2: Generated Code Validation & Testing Engine Tests', () 
   const userA = { id: 'a1b2c3d4-3333-3333-3333-aaaaaaaaaaaa', email: 'usera@example.com' };
 
   test('1. Workspace Path Security: blocks directory traversal (../../) and escaping paths', () => {
-    const tempRoot = path.join(os.tmpdir(), 'codegraph-security-test');
+    const tempRoot = path.join(os.tmpdir(), 'nodal-security-test');
 
     assert.throws(
       () => WorkspaceService.validateSafePath(tempRoot, '../../etc/passwd'),
@@ -386,7 +386,7 @@ src/config.ts:5:1 - warning TS2307: Cannot find module './local' or its correspo
     assert.strictEqual(checkFileRes.rows[0].content, originalContent);
 
     // Verify temporary workspace directory is completely cleaned up
-    const baseTempDir = path.join(os.tmpdir(), 'codegraph-val', repoId);
+    const baseTempDir = path.join(os.tmpdir(), 'nodal-val', repoId);
     if (fs.existsSync(baseTempDir)) {
       const remainingChildren = fs.readdirSync(baseTempDir);
       assert.strictEqual(remainingChildren.length, 0);

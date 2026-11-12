@@ -98,7 +98,7 @@ export default function LoginPage() {
             <span className="material-symbols-outlined text-[26px]">hub</span>
           </div>
           <h1 className="text-2xl font-heading font-bold text-white tracking-tight">
-            Sign In to CodeGraph
+            Sign In to Nodal
           </h1>
           <p className="text-xs text-[#938f98] leading-relaxed">
             AST-powered code intelligence, relationships & architecture graph

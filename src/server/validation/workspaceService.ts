@@ -32,7 +32,7 @@ export class WorkspaceService {
    * Creates a dedicated, isolated temporary workspace directory.
    */
   static async createWorkspace(repositoryId: string, validationId: string): Promise<string> {
-    const baseTempDir = path.join(os.tmpdir(), 'codegraph-val', repositoryId, validationId);
+    const baseTempDir = path.join(os.tmpdir(), 'nodal-val', repositoryId, validationId);
     await fs.promises.mkdir(baseTempDir, { recursive: true });
     return baseTempDir;
   }
